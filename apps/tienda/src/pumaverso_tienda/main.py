@@ -1,9 +1,13 @@
 from fastapi import FastAPI
 
+from pumaverso_tienda.config import get_settings
+
+settings = get_settings()
+
 app = FastAPI(
-    title="Pumaverso POS - Nodo local",
+    title=settings.app_name,
     description="API del monolito local de cada sucursal.",
-    version="0.1.0",
+    version=settings.app_version,
 )
 
 
