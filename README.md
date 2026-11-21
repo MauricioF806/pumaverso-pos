@@ -14,7 +14,7 @@ Pumaverso POS permite que cada sucursal opere de manera autónoma mediante un mo
 - **Interfaz de usuario:** TypeScript, React y Tauri.
 - **Servidor central:** Microservicios con Python y FastAPI.
 - **Base de datos central:** PostgreSQL.
-- **Comunicación asíncrona:** Redis Streams.
+- **Comunicación asíncrona:** cola de eventos en PostgreSQL.
 
 ## Principios de diseño
 
@@ -27,7 +27,10 @@ Pumaverso POS permite que cada sucursal opere de manera autónoma mediante un mo
 ## Estructura del proyecto
 
 - `apps/tienda/`: monolito de cada sucursal.
+- `apps/central/`: servicios centrales (planeada).
+- `packages/contratos/`: contrato de eventos compartido entre tienda y central (planeada).
 - `docs/`: documentación técnica y arquitectónica.
+- `docs/decisiones/`: decisiones de arquitectura del equipo.
 - `scripts/`: herramientas de desarrollo.
 
 ## Desarrollo
