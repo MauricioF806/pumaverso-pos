@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.0
+**Versión del documento:** 1.1
 
 ---
 
@@ -110,6 +110,8 @@ Se utiliza la combinación:
 
 **Sucursal + caja + consecutivo**
 
+En V1 cada sucursal opera con una sola caja, pero el identificador de caja se conserva en la identidad para no cambiar el formato cuando se agreguen más cajas (ver `docs/decisiones/0004-una-caja-por-sucursal.md`).
+
 El reloj se utiliza para reportes y referencias temporales. Si la fecha local es anterior al último momento de sincronización registrado, se bloquean las ventas hasta corregirla.
 
 ---
@@ -169,7 +171,7 @@ Tecnologías:
 
 - Python y FastAPI.
 - PostgreSQL.
-- Redis Streams para comunicación asíncrona.
+- PostgreSQL como cola de eventos para la comunicación asíncrona (ver `docs/decisiones/0001-cola-de-eventos-postgresql.md`).
 - SQL y Python/pandas para detección de inventario fantasma.
 
 Cada servicio central tendrá su propio esquema en PostgreSQL, aunque inicialmente se utilice una misma instancia de base de datos.
@@ -181,7 +183,7 @@ El nodo local se comunica con central mediante dos canales:
 1. **Subida:** envío de eventos locales hacia el servicio de Sincronización.
 2. **Bajada:** recepción de información central, como credenciales, bajas, precios y costos.
 
-La comunicación entre servicios centrales se realiza mediante eventos asíncronos en Redis Streams.
+La comunicación entre servicios centrales se realiza mediante eventos asíncronos, a través de una cola de eventos en PostgreSQL.
 
 Ningún servicio debe depender de una llamada síncrona a otro para completar el registro local de una venta.
 
@@ -268,7 +270,7 @@ Para evitar saturar el servidor central cuando varias sucursales recuperan conex
 - Se utilizan reintentos con backoff exponencial y jitter.
 - Se emplea una cola intermedia para regular el flujo de eventos.
 
-Para V1 se contempla Redis Streams o PostgreSQL como mecanismo de cola intermedia. La elección definitiva debe documentarse antes de implementar esa parte.
+Para V1, la cola intermedia se implementa en PostgreSQL (ver `docs/decisiones/0001-cola-de-eventos-postgresql.md`). Redis Streams se reconsiderará solo si el volumen lo justifica.
 
 Kafka queda fuera del alcance inicial.
 
@@ -282,38 +284,42 @@ Las transacciones realizadas por un usuario revocado durante ese periodo se env�
 
 ## 7. Estructura actual del repositorio
 
-La estructura inicial del proyecto es:
+La estructura del proyecto es la siguiente. Las carpetas marcadas como *planeada* todavía no existen y se crearán al desarrollar esa parte:
 
 ```text
 pumaverso-pos/
 ├── apps/
-│   └── tienda/
-│       ├── src/
-│       │   └── pumaverso_tienda/
-│       │       ├── api/
-│       │       │   └── routes/
-│       │       ├── catalogo/
-│       │       ├── eventos/
-│       │       ├── inventario/
-│       │       ├── persistencia/
-│       │       ├── pos/
-│       │       ├── sincronizacion/
-│       │       ├── usuarios/
-│       │       ├── config.py
-│       │       └── main.py
-│       ├── tests/
-│       └── pyproject.toml
+│   ├── tienda/                  # monolito de cada sucursal
+│   │   ├── src/
+│   │   │   └── pumaverso_tienda/
+│   │   │       ├── api/
+│   │   │       │   └── routes/
+│   │   │       ├── catalogo/
+│   │   │       ├── eventos/
+│   │   │       ├── inventario/
+│   │   │       ├── persistencia/
+│   │   │       ├── pos/
+│   │   │       ├── sincronizacion/
+│   │   │       ├── usuarios/
+│   │   │       ├── config.py
+│   │   │       └── main.py
+│   │   ├── tests/
+│   │   └── pyproject.toml
+│   └── central/                 # servicios centrales (planeada, decisión 0002)
+├── packages/
+│   └── contratos/               # contrato de eventos compartido (planeada, decisión 0003)
 ├── docs/
-│   ├── decisiones/
+│   ├── decisiones/              # decisiones de arquitectura del equipo
 │   ├── arquitectura.md
 │   └── CONTEXTO_PROYECTO.md
 ├── scripts/
 ├── .env.example
 ├── .gitignore
+├── CONTRIBUTING.md
 └── README.md
 ```
 
-Esta es la estructura inicial del repositorio. Puede ampliarse conforme avance el desarrollo, siempre que los cambios respeten la arquitectura acordada.
+Puede ampliarse conforme avance el desarrollo, siempre que los cambios respeten la arquitectura acordada.
 
 ---
 
@@ -360,14 +366,15 @@ No realices cambios arquitectónicos por iniciativa propia.
 Los siguientes puntos todavía requieren una decisión explícita del equipo:
 
 - Determinar si los pagos online se incluirán en V1.
-- Confirmar el alcance de las sucursales piloto y el uso de una caja por sucursal.
+- Confirmar qué sucursales participan en el piloto. Deben operar con una sola caja (ver decisión 0004).
 - Establecer cuánto tiempo puede transcurrir antes de escalar un conteo físico pendiente.
 - Definir la fuente y el periodo de referencia para el historial de ventas.
 - Establecer quién puede aprobar ajustes de inventario.
-- Definir el mecanismo definitivo de cola intermedia para sincronización.
 - Precisar el procedimiento para resolver ventas cuyo cobro no pudo confirmarse tras un apagón.
 
 Estas decisiones no deben asumirse como definitivas hasta que el equipo las acuerde y documente.
+
+Las decisiones ya tomadas se registran en `docs/decisiones/`, una por archivo y numeradas en orden.
 
 ---
 
@@ -382,7 +389,9 @@ Hasta la elaboración de este documento:
 - Se configuró Python 3.13 mediante un entorno virtual.
 - Se definió `pyproject.toml` con las dependencias iniciales.
 - Se prepararon los archivos básicos de documentación y configuración.
+- Se corrigió el formato de la documentación.
+- Se documentaron las primeras cuatro decisiones de arquitectura en `docs/decisiones/`.
 
 La implementación funcional de los módulos todavía está pendiente.
 
-**Próximo objetivo:** instalar las dependencias, levantar la aplicación FastAPI local y comenzar a implementar los módulos del monolito.
+**Próximo objetivo:** implementar los módulos `persistencia` y `eventos` del monolito local y definir el contrato de eventos en `packages/contratos/`.
