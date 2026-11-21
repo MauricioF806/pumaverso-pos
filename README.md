@@ -3,9 +3,9 @@
 
 Plataforma POS distribuida para una cadena de tiendas de conveniencia.
 
-## Descripci髇
+## Descripci贸n
 
-Pumaverso POS permite que cada sucursal opere de manera aut髇oma mediante un monolito local. El sistema registra ventas e inventario en SQLite y sincroniza sus operaciones con un servidor central cuando existe conexi髇.
+Pumaverso POS permite que cada sucursal opere de manera aut贸noma mediante un monolito local. El sistema registra ventas e inventario en SQLite y sincroniza sus operaciones con un servidor central cuando existe conexi贸n.
 
 ## Arquitectura
 
@@ -14,37 +14,69 @@ Pumaverso POS permite que cada sucursal opere de manera aut髇oma mediante un mon
 - **Interfaz de usuario:** TypeScript, React y Tauri.
 - **Servidor central:** Microservicios con Python y FastAPI.
 - **Base de datos central:** PostgreSQL.
-- **Comunicaci髇 as韓crona:** Redis Streams.
+- **Comunicaci贸n as铆ncrona:** Redis Streams.
 
-## Principios de dise駉
+## Principios de dise帽o
 
 - Arquitectura local-first.
 - Registro de eventos append-only.
-- Transacciones locales at髆icas.
-- Sincronizaci髇 idempotente.
-- Autonom韆 de cada sucursal ante desconexiones.
+- Transacciones locales at贸micas.
+- Sincronizaci贸n idempotente.
+- Autonom铆a de cada sucursal ante desconexiones.
 
 ## Estructura del proyecto
 
 - `apps/tienda/`: monolito de cada sucursal.
-- `docs/`: documentaci髇 t閏nica y arquitect髇ica.
+- `docs/`: documentaci贸n t茅cnica y arquitect贸nica.
 - `scripts/`: herramientas de desarrollo.
 
 ## Desarrollo
 
 El monolito utiliza Python 3.13.
 
-Para preparar el entorno virtual:
+Para preparar el entorno virtual en Windows (Git Bash):
 
 ```bash
 py -3.13 -m venv .venv
 source .venv/Scripts/activate
 ```
 
-Las instrucciones de instalaci髇 y ejecuci髇 se documentar醤 conforme avance el desarrollo.
+En macOS o Linux:
+
+```bash
+python3.13 -m venv .venv
+source .venv/bin/activate
+```
+
+Instalar el monolito y sus dependencias de desarrollo (desde la ra铆z del repositorio):
+
+```bash
+python -m pip install -e "apps/tienda[dev]"
+```
+
+Crear el archivo de configuraci贸n local a partir del ejemplo:
+
+```bash
+cp .env.example .env
+```
+
+Levantar el servidor local:
+
+```bash
+python -m uvicorn pumaverso_tienda.main:app --reload
+```
+
+La API queda disponible en `http://127.0.0.1:8000`. La documentaci贸n interactiva est谩 en `http://127.0.0.1:8000/docs` y la verificaci贸n de salud en `http://127.0.0.1:8000/health`.
+
+Ejecutar las pruebas y el revisor de estilo:
+
+```bash
+python -m pytest
+python -m ruff check apps/tienda
+```
 
 ## Equipo
 
 **Pumaverso Distribuido**
 
-Proyecto acad閙ico de Sistemas Distribuidos.
+Proyecto acad茅mico de Sistemas Distribuidos.
