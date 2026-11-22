@@ -1,7 +1,11 @@
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Identificadores cortos sin espacios: letras, números, guion y guion bajo.
+PATRON_IDENTIFICADOR = r"^[A-Za-z0-9_-]{1,32}$"
 
 
 class Settings(BaseSettings):
@@ -12,6 +16,11 @@ class Settings(BaseSettings):
     environment: str = "development"
 
     database_path: Path = Path("data/pumaverso.db")
+
+    # Identidad del nodo: forma parte de la identidad de cada evento.
+    sucursal_id: str = Field(default="S001", pattern=PATRON_IDENTIFICADOR)
+    # En V1 hay una sola caja por sucursal (decisión 0004).
+    caja_id: str = Field(default="C01", pattern=PATRON_IDENTIFICADOR)
 
     model_config = SettingsConfigDict(
         env_file=".env",
