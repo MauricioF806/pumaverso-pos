@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.1
+**Versión del documento:** 1.2
 
 ---
 
@@ -391,7 +391,8 @@ Hasta la elaboración de este documento:
 - Se prepararon los archivos básicos de documentación y configuración.
 - Se corrigió el formato de la documentación.
 - Se documentaron las primeras cuatro decisiones de arquitectura en `docs/decisiones/`.
+- Se implementaron los módulos `persistencia` (conexión SQLite, transacciones y migraciones) y `eventos` (registro append-only, consecutivo sin huecos, hash y estado de sincronización), con sus pruebas. Ver decisión 0005.
 
-La implementación funcional de los módulos todavía está pendiente.
+La implementación funcional de los demás módulos todavía está pendiente.
 
-**Próximo objetivo:** implementar los módulos `persistencia` y `eventos` del monolito local y definir el contrato de eventos en `packages/contratos/`.
+**Próximo objetivo:** definir el contrato de eventos en `packages/contratos/` (decisión 0003) y mover ahí los tipos de evento que hoy viven en `eventos/registro.py`.

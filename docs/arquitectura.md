@@ -51,3 +51,4 @@ Cada decisión vive en su propio archivo dentro de [`decisiones/`](decisiones/).
 | [0002](decisiones/0002-codigo-central-en-apps-central.md) | El código de central vive en `apps/central/` | Aceptada |
 | [0003](decisiones/0003-contrato-de-eventos-en-packages-contratos.md) | El contrato de eventos vive en `packages/contratos/` | Aceptada |
 | [0004](decisiones/0004-una-caja-por-sucursal.md) | Una caja por sucursal en V1 | Aceptada |
+| [0005](decisiones/0005-registro-de-eventos-inmutable.md) | Registro de eventos inmutable y estado de sincronización aparte | Aceptada |
