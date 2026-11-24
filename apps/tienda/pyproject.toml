@@ -10,7 +10,8 @@ requires-python = ">=3.13,<3.14"
 dependencies = [
     "fastapi>=0.115,<1.0",
     "uvicorn[standard]>=0.34,<1.0",
-    "pydantic-settings>=2.7,<3.0"
+    "pydantic-settings>=2.7,<3.0",
+    "pumaverso-contratos"
 ]
 
 [project.optional-dependencies]

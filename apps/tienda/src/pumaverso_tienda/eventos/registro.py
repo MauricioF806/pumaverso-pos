@@ -18,25 +18,9 @@ import sqlite3
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from enum import StrEnum
 from typing import Any
 
-VERSION_ESQUEMA_ACTUAL = 1
-
-
-class TipoEvento(StrEnum):
-    """Tipos de evento del PRD.
-
-    Provisional: cuando exista ``packages/contratos/`` (decisión 0003), estos
-    tipos y el contenido de cada uno se definirán ahí.
-    """
-
-    VENTA = "venta"
-    CANCELACION = "cancelacion"
-    RECEPCION_PROVEEDOR = "recepcion_proveedor"
-    MERMA = "merma"
-    AJUSTE = "ajuste"
-    TRASPASO = "traspaso"
+from pumaverso_contratos import VERSION_ESQUEMA_ACTUAL, TipoEvento
 
 
 class FueraDeTransaccionError(RuntimeError):
