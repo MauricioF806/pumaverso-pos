@@ -73,11 +73,38 @@ CREATE TABLE productos_catalogo (
 ) STRICT;
 """
 
+_0003_INVENTARIO_Y_POS = """
+CREATE TABLE existencias_locales (
+    sku            TEXT    PRIMARY KEY REFERENCES productos_catalogo(sku),
+    cantidad       INTEGER NOT NULL,
+    actualizado_en TEXT    NOT NULL
+) STRICT;
+
+CREATE TABLE alertas_inventario (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    sucursal_id    TEXT    NOT NULL,
+    caja_id        TEXT    NOT NULL,
+    consecutivo    INTEGER NOT NULL,
+    tipo_alerta    TEXT    NOT NULL,
+    detalle        TEXT    NOT NULL,
+    creada_en      TEXT    NOT NULL
+) STRICT;
+
+CREATE TABLE ventas_canceladas (
+    sucursal_id          TEXT    NOT NULL,
+    caja_id              TEXT    NOT NULL,
+    consecutivo_original INTEGER NOT NULL,
+    consecutivo_evento   INTEGER NOT NULL,
+    cancelada_en         TEXT    NOT NULL,
+    PRIMARY KEY (sucursal_id, caja_id, consecutivo_original)
+) STRICT;
+"""
+
 MIGRACIONES: tuple[tuple[int, str], ...] = (
     (1, _0001_REGISTRO_DE_EVENTOS),
     (2, _0002_CATALOGO_Y_USUARIOS),
+    (3, _0003_INVENTARIO_Y_POS),
 )
-
 
 class MigracionError(RuntimeError):
     """El esquema de la base de datos no se puede llevar a la versión esperada."""
