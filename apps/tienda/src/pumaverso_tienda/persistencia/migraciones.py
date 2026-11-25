@@ -52,7 +52,31 @@ CREATE TABLE estado_sincronizacion (
 ) STRICT;
 """
 
-MIGRACIONES: tuple[tuple[int, str], ...] = ((1, _0001_REGISTRO_DE_EVENTOS),)
+_0002_CATALOGO_Y_USUARIOS = """
+CREATE TABLE usuarios_locales (
+    usuario_id     TEXT    PRIMARY KEY,
+    nombre         TEXT    NOT NULL,
+    rol            TEXT    NOT NULL,
+    hash_pin       TEXT    NOT NULL,
+    activo         INTEGER NOT NULL CHECK (activo IN (0, 1)),
+    actualizado_en TEXT    NOT NULL
+) STRICT;
+
+CREATE TABLE productos_catalogo (
+    sku                   TEXT    PRIMARY KEY,
+    nombre                TEXT    NOT NULL,
+    precio_centavos       INTEGER NOT NULL CHECK (precio_centavos >= 0),
+    precio_actualizado_en TEXT    NOT NULL,
+    costo_centavos        INTEGER NOT NULL CHECK (costo_centavos >= 0),
+    costo_actualizado_en  TEXT    NOT NULL,
+    activo                INTEGER NOT NULL CHECK (activo IN (0, 1))
+) STRICT;
+"""
+
+MIGRACIONES: tuple[tuple[int, str], ...] = (
+    (1, _0001_REGISTRO_DE_EVENTOS),
+    (2, _0002_CATALOGO_Y_USUARIOS),
+)
 
 
 class MigracionError(RuntimeError):
