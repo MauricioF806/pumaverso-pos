@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # En V1 hay una sola caja por sucursal (decisión 0004).
     caja_id: str = Field(default="C01", pattern=PATRON_IDENTIFICADOR)
 
+    # Parámetros de sincronización con el servidor central.
+    central_url: str = "http://127.0.0.1:8001"
+    sync_lote_maximo: int = Field(default=100, ge=1, le=1000)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from pumaverso_tienda.api.routes import api_router
 from pumaverso_tienda.config import get_settings
 from pumaverso_tienda.persistencia import abrir_conexion, aplicar_migraciones
 
@@ -26,6 +27,8 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
 )
+
+app.include_router(api_router)
 
 
 @app.get("/health", tags=["Salud"])
