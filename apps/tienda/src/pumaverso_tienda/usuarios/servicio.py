@@ -11,6 +11,9 @@ from pumaverso_tienda.persistencia.transacciones import transaccion
 
 TTL_CREDENCIALES = timedelta(hours=24)
 
+# Roles que pueden aprobar cancelaciones y ajustes de inventario (decisión 0006).
+ROLES_APROBADORES = frozenset({"gerente", "supervisor"})
+
 
 class CredencialesInvalidasError(ValueError):
     """El usuario no existe o el PIN proporcionado es incorrecto."""
@@ -22,6 +25,10 @@ class UsuarioInactivoError(PermissionError):
 
 class CredencialesExpiradasError(PermissionError):
     """Las credenciales locales superaron el TTL de 24 horas sin sincronizar."""
+
+
+class AprobacionInvalidaError(PermissionError):
+    """Quien aprueba no existe, no está vigente, no tiene un rol aprobador o es el mismo operador."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,20 +113,62 @@ def autenticar_usuario(
     *,
     ahora: datetime | None = None,
 ) -> UsuarioLocal:
-    """Valida credenciales locales, estado activo y vigencia máxima de 24 horas."""
+    """Valida el PIN y que el usuario pueda operar (activo y vigente)."""
     usuario = obtener_usuario(conexion, usuario_id)
     if usuario is None or not verificar_pin(pin, usuario.hash_pin):
         raise CredencialesInvalidasError("Usuario o PIN incorrectos.")
+    return validar_usuario_operativo(conexion, usuario_id, ahora=ahora)
+
+
+def validar_usuario_operativo(
+    conexion: sqlite3.Connection,
+    usuario_id: str,
+    *,
+    ahora: datetime | None = None,
+) -> UsuarioLocal:
+    """Comprueba que el usuario existe, está activo y su vigencia de 24 horas no venció.
+
+    La vigencia se cuenta desde que la tienda recibió los datos del usuario en
+    la última sincronización (decisión 0006).
+    """
+    usuario = obtener_usuario(conexion, usuario_id)
+    if usuario is None:
+        raise CredencialesInvalidasError(f"El usuario '{usuario_id}' no existe localmente.")
     if not usuario.activo:
         raise UsuarioInactivoError(f"El usuario '{usuario_id}' está dado de baja.")
 
     referencia = _asegurar_zona_horaria(ahora)
-    ultima_sync = datetime.fromisoformat(usuario.actualizado_en)
-    if referencia - ultima_sync > TTL_CREDENCIALES:
+    recibido = datetime.fromisoformat(usuario.actualizado_en)
+    if referencia - recibido > TTL_CREDENCIALES:
         raise CredencialesExpiradasError(
-            "Las credenciales locales superaron el TTL de 24 horas."
+            "Las credenciales locales superaron el TTL de 24 horas sin sincronizar."
         )
     return usuario
+
+
+def validar_aprobador(
+    conexion: sqlite3.Connection,
+    aprobador_id: str,
+    *,
+    operador_id: str,
+    ahora: datetime | None = None,
+) -> UsuarioLocal:
+    """Comprueba que ``aprobador_id`` puede aprobar una operación de ``operador_id``.
+
+    Debe ser un usuario operativo con rol aprobador y distinto del operador:
+    nadie aprueba su propia cancelación o ajuste.
+    """
+    if aprobador_id == operador_id:
+        raise AprobacionInvalidaError("Nadie puede aprobar su propia operación.")
+    try:
+        aprobador = validar_usuario_operativo(conexion, aprobador_id, ahora=ahora)
+    except (CredencialesInvalidasError, UsuarioInactivoError, CredencialesExpiradasError) as error:
+        raise AprobacionInvalidaError(f"El aprobador no es válido: {error}") from error
+    if aprobador.rol not in ROLES_APROBADORES:
+        raise AprobacionInvalidaError(
+            f"El usuario '{aprobador_id}' tiene rol '{aprobador.rol}' y no puede aprobar."
+        )
+    return aprobador
 
 
 def _upsert_usuario(

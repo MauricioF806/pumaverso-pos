@@ -61,9 +61,7 @@ def test_todos_los_tipos_tienen_modelo_registrado():
         TipoEvento.RECEPCION_PROVEEDOR: ContenidoRecepcionProveedor(
             proveedor_id="PROV01",
             folio_documento="FAC-900",
-            partidas=[
-                LineaRecepcion(sku="coca-600", cantidad=24, costo_unitario_centavos=1100)
-            ],
+            partidas=[LineaRecepcion(sku="coca-600", cantidad=24, costo_unitario_centavos=1100)],
             total_centavos=26400,
         ),
         TipoEvento.MERMA: ContenidoMerma(
@@ -124,3 +122,34 @@ def test_evento_contrato_valida_identidad_zona_horaria_y_hash():
             registrado_en=datetime(2026, 11, 21, 18, 30),  # sin zona horaria
             hash="a" * 64,
         )
+
+
+def test_el_algoritmo_del_hash_no_cambia():
+    """Las tiendas ya guardaron eventos con este hash; si cambia, central los rechazaría."""
+    from pumaverso_contratos import calcular_hash_evento
+
+    huella = calcular_hash_evento(
+        sucursal_id="S001",
+        caja_id="C01",
+        consecutivo=7,
+        tipo="venta",
+        version_esquema=1,
+        contenido={
+            "partidas": [
+                {
+                    "sku": "coca-600",
+                    "cantidad": 2,
+                    "precio_unitario_centavos": 1800,
+                    "subtotal_centavos": 3600,
+                }
+            ],
+            "total_centavos": 3600,
+            "metodo_pago": "efectivo",
+            "inventario_negativo": False,
+            "nota": "año ñ",
+        },
+        usuario_id="cajero-1",
+        registrado_en="2026-11-21T18:30:00.000+00:00",
+    )
+
+    assert huella == "7d6c77f13716a434a8e30d1a89b3f87e42991ee954a5d699dd85aaf639e5bc65"

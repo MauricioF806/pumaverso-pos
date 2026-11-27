@@ -31,8 +31,8 @@ flowchart LR
 |---|---|---|
 | Monolito de la sucursal | `apps/tienda/` | Python 3.13, FastAPI, SQLite |
 | Pantalla de caja | Por definir | TypeScript, React, Tauri |
-| Servicios centrales | `apps/central/` (planeada) | Python, FastAPI, PostgreSQL |
-| Contrato de eventos | `packages/contratos/` (planeada) | Python, Pydantic |
+| Servicios centrales | `apps/central/` | Python, FastAPI, PostgreSQL |
+| Contrato de eventos | `packages/contratos/` | Python, Pydantic |
 
 ## Reglas que no se negocian
 
@@ -52,3 +52,4 @@ Cada decisión vive en su propio archivo dentro de [`decisiones/`](decisiones/).
 | [0003](decisiones/0003-contrato-de-eventos-en-packages-contratos.md) | El contrato de eventos vive en `packages/contratos/` | Aceptada |
 | [0004](decisiones/0004-una-caja-por-sucursal.md) | Una caja por sucursal en V1 | Aceptada |
 | [0005](decisiones/0005-registro-de-eventos-inmutable.md) | Registro de eventos inmutable y estado de sincronización aparte | Aceptada |
+| [0006](decisiones/0006-vigencia-sesiones-y-validacion-en-central.md) | Vigencia desde la recepción, sesiones con PIN y validación en central | Aceptada |

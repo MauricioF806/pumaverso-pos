@@ -1,13 +1,25 @@
-"""Endpoints locales para autenticación, catálogo, inventario y ventas POS."""
+"""Endpoints locales para sesión, catálogo, inventario y ventas POS.
+
+Todas las operaciones requieren una sesión (``POST /auth/login``) y se registran
+a nombre del usuario de la sesión. Cancelaciones y ajustes requieren además el
+usuario y PIN de un gerente o supervisor distinto de quien opera (decisión 0006).
+"""
 
 import sqlite3
+from collections.abc import Iterator
+from contextlib import contextmanager
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pumaverso_contratos import PATRON_IDENTIFICADOR, LineaRecepcion
 from pydantic import BaseModel, Field
 
-from pumaverso_tienda.api.dependencias import obtener_conexion
+from pumaverso_tienda.api.dependencias import (
+    obtener_conexion,
+    obtener_token,
+    obtener_usuario_actual,
+)
 from pumaverso_tienda.catalogo import (
     PrecioExpiradoError,
     ProductoInactivoError,
@@ -29,14 +41,19 @@ from pumaverso_tienda.pos import (
     registrar_venta,
 )
 from pumaverso_tienda.usuarios import (
+    AprobacionInvalidaError,
     CredencialesExpiradasError,
     CredencialesInvalidasError,
     UsuarioInactivoError,
+    UsuarioLocal,
     autenticar_usuario,
+    cerrar_sesion,
+    iniciar_sesion,
 )
 
 router = APIRouter(tags=["Operación local"])
 ConexionDep = Annotated[sqlite3.Connection, Depends(obtener_conexion)]
+UsuarioActualDep = Annotated[UsuarioLocal, Depends(obtener_usuario_actual)]
 
 
 class SolicitudLogin(BaseModel):
@@ -44,7 +61,9 @@ class SolicitudLogin(BaseModel):
     pin: str = Field(min_length=1, max_length=32)
 
 
-class RespuestaUsuario(BaseModel):
+class RespuestaLogin(BaseModel):
+    token: str
+    expira_en: datetime
     usuario_id: str
     nombre: str
     rol: str
@@ -64,7 +83,6 @@ class ItemVentaBody(BaseModel):
 
 
 class SolicitudVenta(BaseModel):
-    usuario_id: str = Field(pattern=PATRON_IDENTIFICADOR)
     items: list[ItemVentaBody] = Field(min_length=1)
 
 
@@ -79,32 +97,33 @@ class RespuestaVentaHttp(BaseModel):
     skus_costo_por_revisar: list[str]
 
 
-class SolicitudCancelacion(BaseModel):
-    usuario_id: str = Field(pattern=PATRON_IDENTIFICADOR)
+class Aprobacion(BaseModel):
+    """Gerente o supervisor que autoriza la operación, con su propio PIN."""
+
+    aprobador_id: str = Field(pattern=PATRON_IDENTIFICADOR)
+    aprobador_pin: str = Field(min_length=1, max_length=32)
+
+
+class SolicitudCancelacion(Aprobacion):
     motivo: str = Field(min_length=1, max_length=255)
-    aprobado_por: str = Field(pattern=PATRON_IDENTIFICADOR)
 
 
 class SolicitudRecepcion(BaseModel):
-    usuario_id: str = Field(pattern=PATRON_IDENTIFICADOR)
     proveedor_id: str = Field(pattern=PATRON_IDENTIFICADOR)
     folio_documento: str = Field(min_length=1, max_length=64)
     partidas: list[LineaRecepcion] = Field(min_length=1)
 
 
 class SolicitudMerma(BaseModel):
-    usuario_id: str = Field(pattern=PATRON_IDENTIFICADOR)
     sku: str = Field(min_length=1, max_length=64)
     cantidad: int = Field(gt=0)
     motivo: str = Field(min_length=1, max_length=255)
 
 
-class SolicitudAjuste(BaseModel):
-    usuario_id: str = Field(pattern=PATRON_IDENTIFICADOR)
+class SolicitudAjuste(Aprobacion):
     sku: str = Field(min_length=1, max_length=64)
     diferencia_cantidad: int
     motivo: str = Field(min_length=1, max_length=255)
-    aprobado_por: str = Field(pattern=PATRON_IDENTIFICADOR)
 
 
 class RespuestaEventoCreado(BaseModel):
@@ -115,30 +134,72 @@ class RespuestaEventoCreado(BaseModel):
     hash: str
 
 
-@router.post("/auth/login", response_model=RespuestaUsuario)
-def login_local(datos: SolicitudLogin, conexion: ConexionDep) -> RespuestaUsuario:
+@contextmanager
+def _traducir_errores() -> Iterator[None]:
+    """Convierte los errores del dominio en respuestas HTTP."""
     try:
-        usuario = autenticar_usuario(conexion, datos.usuario_id, datos.pin)
+        yield
     except CredencialesInvalidasError as error:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(error)) from error
-    except (UsuarioInactivoError, CredencialesExpiradasError) as error:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail=str(error)) from error
+    except (UsuarioInactivoError, CredencialesExpiradasError, AprobacionInvalidaError) as error:
+        raise HTTPException(status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+    except ProductoNoEncontradoError as error:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=error.args[0]) from error
+    except (
+        ProductoInactivoError,
+        PrecioExpiradoError,
+        RelojAtrasadoError,
+        VentaNoCancelableError,
+    ) as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(error)) from error
 
-    return RespuestaUsuario(
-        usuario_id=usuario.usuario_id,
-        nombre=usuario.nombre,
-        rol=usuario.rol,
+
+def _verificar_pin_aprobador(conexion: sqlite3.Connection, aprobacion: Aprobacion) -> str:
+    """Comprueba el PIN del aprobador; que pueda aprobar lo valida el dominio."""
+    try:
+        autenticar_usuario(conexion, aprobacion.aprobador_id, aprobacion.aprobador_pin)
+    except (CredencialesInvalidasError, UsuarioInactivoError, CredencialesExpiradasError) as error:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, detail=f"Aprobación rechazada: {error}"
+        ) from error
+    return aprobacion.aprobador_id
+
+
+def _evento_creado(evento) -> RespuestaEventoCreado:
+    return RespuestaEventoCreado(
+        sucursal_id=evento.sucursal_id,
+        caja_id=evento.caja_id,
+        consecutivo=evento.consecutivo,
+        tipo=evento.tipo.value,
+        hash=evento.hash,
     )
+
+
+@router.post("/auth/login", response_model=RespuestaLogin)
+def login_local(datos: SolicitudLogin, conexion: ConexionDep) -> RespuestaLogin:
+    """Valida usuario y PIN y entrega el token de la sesión."""
+    with _traducir_errores():
+        sesion = iniciar_sesion(conexion, datos.usuario_id, datos.pin)
+    return RespuestaLogin(
+        token=sesion.token,
+        expira_en=sesion.expira_en,
+        usuario_id=sesion.usuario.usuario_id,
+        nombre=sesion.usuario.nombre,
+        rol=sesion.usuario.rol,
+    )
+
+
+@router.post("/auth/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout_local(conexion: ConexionDep, token: Annotated[str, Depends(obtener_token)]) -> Response:
+    """Cierra la sesión del token enviado."""
+    cerrar_sesion(conexion, token)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/catalogo/{sku}", response_model=RespuestaProducto)
 def consultar_producto(sku: str, conexion: ConexionDep) -> RespuestaProducto:
-    try:
+    with _traducir_errores():
         validacion = validar_producto_para_venta(conexion, sku)
-    except ProductoNoEncontradoError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    except (ProductoInactivoError, PrecioExpiradoError) as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
     producto = validacion.producto
     return RespuestaProducto(
@@ -150,29 +211,19 @@ def consultar_producto(sku: str, conexion: ConexionDep) -> RespuestaProducto:
     )
 
 
-@router.post(
-    "/pos/ventas",
-    response_model=RespuestaVentaHttp,
-    status_code=status.HTTP_201_CREATED,
-)
-def crear_venta(datos: SolicitudVenta, conexion: ConexionDep) -> RespuestaVentaHttp:
+@router.post("/pos/ventas", response_model=RespuestaVentaHttp, status_code=status.HTTP_201_CREATED)
+def crear_venta(
+    datos: SolicitudVenta, conexion: ConexionDep, usuario: UsuarioActualDep
+) -> RespuestaVentaHttp:
     settings = get_settings()
-    try:
+    with _traducir_errores():
         resultado = registrar_venta(
             conexion,
             sucursal_id=settings.sucursal_id,
             caja_id=settings.caja_id,
-            usuario_id=datos.usuario_id,
+            usuario_id=usuario.usuario_id,
             items=[ItemVentaSolicitado(sku=i.sku, cantidad=i.cantidad) for i in datos.items],
         )
-    except CredencialesInvalidasError as error:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(error)) from error
-    except (UsuarioInactivoError, CredencialesExpiradasError) as error:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
-    except ProductoNoEncontradoError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    except (ProductoInactivoError, PrecioExpiradoError, RelojAtrasadoError) as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
 
     evento = resultado.evento
     return RespuestaVentaHttp(
@@ -193,33 +244,24 @@ def crear_venta(datos: SolicitudVenta, conexion: ConexionDep) -> RespuestaVentaH
     status_code=status.HTTP_201_CREATED,
 )
 def cancelar_venta_endpoint(
-    consecutivo: int, datos: SolicitudCancelacion, conexion: ConexionDep
+    consecutivo: int,
+    datos: SolicitudCancelacion,
+    conexion: ConexionDep,
+    usuario: UsuarioActualDep,
 ) -> RespuestaEventoCreado:
     settings = get_settings()
-    try:
+    aprobador_id = _verificar_pin_aprobador(conexion, datos)
+    with _traducir_errores():
         evento = cancelar_venta(
             conexion,
             sucursal_id=settings.sucursal_id,
             caja_id=settings.caja_id,
-            usuario_id=datos.usuario_id,
+            usuario_id=usuario.usuario_id,
             consecutivo_original=consecutivo,
             motivo=datos.motivo,
-            aprobado_por=datos.aprobado_por,
+            aprobado_por=aprobador_id,
         )
-    except CredencialesInvalidasError as error:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(error)) from error
-    except (UsuarioInactivoError, CredencialesExpiradasError) as error:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
-    except VentaNoCancelableError as error:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
-
-    return RespuestaEventoCreado(
-        sucursal_id=evento.sucursal_id,
-        caja_id=evento.caja_id,
-        consecutivo=evento.consecutivo,
-        tipo=evento.tipo.value,
-        hash=evento.hash,
-    )
+    return _evento_creado(evento)
 
 
 @router.post(
@@ -227,28 +269,21 @@ def cancelar_venta_endpoint(
     response_model=RespuestaEventoCreado,
     status_code=status.HTTP_201_CREATED,
 )
-def crear_recepcion(datos: SolicitudRecepcion, conexion: ConexionDep) -> RespuestaEventoCreado:
+def crear_recepcion(
+    datos: SolicitudRecepcion, conexion: ConexionDep, usuario: UsuarioActualDep
+) -> RespuestaEventoCreado:
     settings = get_settings()
-    try:
+    with _traducir_errores():
         evento = registrar_recepcion_proveedor(
             conexion,
             sucursal_id=settings.sucursal_id,
             caja_id=settings.caja_id,
-            usuario_id=datos.usuario_id,
+            usuario_id=usuario.usuario_id,
             proveedor_id=datos.proveedor_id,
             folio_documento=datos.folio_documento,
             partidas=datos.partidas,
         )
-    except ProductoNoEncontradoError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-
-    return RespuestaEventoCreado(
-        sucursal_id=evento.sucursal_id,
-        caja_id=evento.caja_id,
-        consecutivo=evento.consecutivo,
-        tipo=evento.tipo.value,
-        hash=evento.hash,
-    )
+    return _evento_creado(evento)
 
 
 @router.post(
@@ -256,28 +291,21 @@ def crear_recepcion(datos: SolicitudRecepcion, conexion: ConexionDep) -> Respues
     response_model=RespuestaEventoCreado,
     status_code=status.HTTP_201_CREATED,
 )
-def crear_merma(datos: SolicitudMerma, conexion: ConexionDep) -> RespuestaEventoCreado:
+def crear_merma(
+    datos: SolicitudMerma, conexion: ConexionDep, usuario: UsuarioActualDep
+) -> RespuestaEventoCreado:
     settings = get_settings()
-    try:
+    with _traducir_errores():
         evento = registrar_merma(
             conexion,
             sucursal_id=settings.sucursal_id,
             caja_id=settings.caja_id,
-            usuario_id=datos.usuario_id,
+            usuario_id=usuario.usuario_id,
             sku=datos.sku,
             cantidad=datos.cantidad,
             motivo=datos.motivo,
         )
-    except ProductoNoEncontradoError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-
-    return RespuestaEventoCreado(
-        sucursal_id=evento.sucursal_id,
-        caja_id=evento.caja_id,
-        consecutivo=evento.consecutivo,
-        tipo=evento.tipo.value,
-        hash=evento.hash,
-    )
+    return _evento_creado(evento)
 
 
 @router.post(
@@ -285,28 +313,23 @@ def crear_merma(datos: SolicitudMerma, conexion: ConexionDep) -> RespuestaEvento
     response_model=RespuestaEventoCreado,
     status_code=status.HTTP_201_CREATED,
 )
-def crear_ajuste(datos: SolicitudAjuste, conexion: ConexionDep) -> RespuestaEventoCreado:
+def crear_ajuste(
+    datos: SolicitudAjuste, conexion: ConexionDep, usuario: UsuarioActualDep
+) -> RespuestaEventoCreado:
     settings = get_settings()
-    try:
-        evento = registrar_ajuste_inventario(
-            conexion,
-            sucursal_id=settings.sucursal_id,
-            caja_id=settings.caja_id,
-            usuario_id=datos.usuario_id,
-            sku=datos.sku,
-            diferencia_cantidad=datos.diferencia_cantidad,
-            motivo=datos.motivo,
-            aprobado_por=datos.aprobado_por,
-        )
-    except ProductoNoEncontradoError as error:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
-    except ValueError as error:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)) from error
-
-    return RespuestaEventoCreado(
-        sucursal_id=evento.sucursal_id,
-        caja_id=evento.caja_id,
-        consecutivo=evento.consecutivo,
-        tipo=evento.tipo.value,
-        hash=evento.hash,
-    )
+    aprobador_id = _verificar_pin_aprobador(conexion, datos)
+    with _traducir_errores():
+        try:
+            evento = registrar_ajuste_inventario(
+                conexion,
+                sucursal_id=settings.sucursal_id,
+                caja_id=settings.caja_id,
+                usuario_id=usuario.usuario_id,
+                sku=datos.sku,
+                diferencia_cantidad=datos.diferencia_cantidad,
+                motivo=datos.motivo,
+                aprobado_por=aprobador_id,
+            )
+        except ValueError as error:
+            raise HTTPException(422, detail=str(error)) from error
+    return _evento_creado(evento)

@@ -7,7 +7,10 @@ contenido para cada operación y el sobre del evento intercambiado entre
 Todos los importes monetarios se expresan como enteros en centavos.
 """
 
-from datetime import datetime
+import hashlib
+import json
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any, Literal
 
@@ -146,6 +149,19 @@ class EventoContrato(_ModeloEstricto):
             raise ValueError("registrado_en debe incluir zona horaria.")
         return valor
 
+    def hash_esperado(self) -> str:
+        """Recalcula el hash a partir de los datos del evento (lo usa central al recibir)."""
+        return calcular_hash_evento(
+            sucursal_id=self.sucursal_id,
+            caja_id=self.caja_id,
+            consecutivo=self.consecutivo,
+            tipo=self.tipo,
+            version_esquema=self.version_esquema,
+            contenido=self.contenido,
+            usuario_id=self.usuario_id,
+            registrado_en=formatear_registrado_en(self.registrado_en),
+        )
+
 
 def serializar_contenido_evento(modelo: BaseModel) -> dict[str, Any]:
     """Convierte un modelo de contenido Pydantic a diccionario listo para persistir."""
@@ -157,3 +173,47 @@ def validar_contenido_por_tipo(tipo: TipoEvento | str, contenido: dict[str, Any]
     tipo_normalizado = TipoEvento(tipo)
     modelo = MODELOS_CONTENIDO[tipo_normalizado]
     return modelo.model_validate(contenido)
+
+
+def formatear_registrado_en(momento: datetime) -> str:
+    """Formato canónico de la fecha de un evento: UTC con milisegundos.
+
+    Es el mismo texto que guarda la tienda, por eso entra en el hash.
+    """
+    if momento.tzinfo is None:
+        raise ValueError("La fecha del evento debe incluir zona horaria.")
+    return momento.astimezone(UTC).isoformat(timespec="milliseconds")
+
+
+def calcular_hash_evento(
+    *,
+    sucursal_id: str,
+    caja_id: str,
+    consecutivo: int,
+    tipo: TipoEvento | str,
+    version_esquema: int,
+    contenido: Mapping[str, Any],
+    usuario_id: str,
+    registrado_en: str,
+) -> str:
+    """Hash SHA-256 de un evento sobre JSON canónico (decisión 0005).
+
+    Vive en el contrato para que la tienda y central lo calculen igual. No
+    cambiar el algoritmo: los eventos ya guardados dejarían de coincidir.
+    """
+    documento = json.dumps(
+        {
+            "caja_id": caja_id,
+            "consecutivo": consecutivo,
+            "contenido": contenido,
+            "registrado_en": registrado_en,
+            "sucursal_id": sucursal_id,
+            "tipo": str(TipoEvento(tipo)),
+            "usuario_id": usuario_id,
+            "version_esquema": version_esquema,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(documento.encode("utf-8")).hexdigest()

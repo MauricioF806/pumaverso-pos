@@ -11,7 +11,6 @@ ajuste) se guarda como un evento. El registro cumple tres reglas del PRD:
   consecutivo. La fecha solo sirve para reportes.
 """
 
-import hashlib
 import json
 import math
 import sqlite3
@@ -20,7 +19,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
-from pumaverso_contratos import VERSION_ESQUEMA_ACTUAL, TipoEvento
+from pumaverso_contratos import VERSION_ESQUEMA_ACTUAL, TipoEvento, calcular_hash_evento
 
 
 class FueraDeTransaccionError(RuntimeError):
@@ -204,25 +203,20 @@ def calcular_hash(
 ) -> str:
     """Calcula el hash SHA-256 de un evento.
 
-    Cubre la identidad y todos los datos del evento. Central lo usa para saber si
-    un evento repetido es un reintento (mismo hash) o un conflicto (hash distinto).
+    Usa la función del contrato compartido para que central obtenga el mismo
+    resultado al verificarlo. Central lo usa también para distinguir un
+    reintento (mismo hash) de un conflicto (hash distinto).
     """
-    documento = json.dumps(
-        {
-            "caja_id": caja_id,
-            "consecutivo": consecutivo,
-            "contenido": json.loads(contenido_json),
-            "registrado_en": registrado_en,
-            "sucursal_id": sucursal_id,
-            "tipo": str(TipoEvento(tipo)),
-            "usuario_id": usuario_id,
-            "version_esquema": version_esquema,
-        },
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
+    return calcular_hash_evento(
+        sucursal_id=sucursal_id,
+        caja_id=caja_id,
+        consecutivo=consecutivo,
+        tipo=tipo,
+        version_esquema=version_esquema,
+        contenido=json.loads(contenido_json),
+        usuario_id=usuario_id,
+        registrado_en=registrado_en,
     )
-    return hashlib.sha256(documento.encode("utf-8")).hexdigest()
 
 
 def verificar_hash(evento: Evento) -> bool:

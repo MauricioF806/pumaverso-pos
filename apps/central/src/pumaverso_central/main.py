@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 
 from pumaverso_central.cola import (
     ConflictoHashEventoError,
+    eventos_fallidos,
     procesar_eventos_pendientes_cola,
     recibir_lote_eventos,
 )
@@ -98,9 +99,7 @@ def subir_eventos_sucursal(
     except ConflictoHashEventoError as error:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ValueError as error:
-        raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(error)
-        ) from error
+        raise HTTPException(status_code=422, detail=str(error)) from error
 
     return LoteEventosResponse(
         ultimo_consecutivo_confirmado=resultado.ultimo_consecutivo_confirmado,
@@ -149,9 +148,7 @@ def obtener_actualizaciones(
         ).fetchall()
 
     return {
-        "usuarios": [
-            {**u, "actualizado_en": u["actualizado_en"].isoformat()} for u in usuarios
-        ],
+        "usuarios": [{**u, "actualizado_en": u["actualizado_en"].isoformat()} for u in usuarios],
         "productos": [
             {
                 **p,
@@ -165,8 +162,19 @@ def obtener_actualizaciones(
 
 @app.post("/sincronizacion/procesar-cola", tags=["Sincronización"])
 def ejecutar_trabajador_cola(conn: ConexionCentralDep, limite: int = 50) -> dict[str, int]:
-    procesados = procesar_eventos_pendientes_cola(conn, limite=limite)
-    return {"procesados": procesados}
+    resultado = procesar_eventos_pendientes_cola(conn, limite=limite)
+    return {"procesados": resultado.procesados, "fallidos": resultado.fallidos}
+
+
+@app.get("/sincronizacion/cola/fallidos", tags=["Sincronización"])
+def consultar_eventos_fallidos(
+    conn: ConexionCentralDep, limite: int = 100
+) -> list[dict[str, object]]:
+    """Eventos que no se pudieron aplicar y esperan revisión."""
+    return [
+        {**fila, "fallido_en": fila["fallido_en"].isoformat()}
+        for fila in eventos_fallidos(conn, limite=limite)
+    ]
 
 
 @app.put("/usuarios/{usuario_id}", tags=["Usuarios"])
@@ -222,6 +230,14 @@ def guardar_producto_central(
                 costo_actualizado_en = excluded.costo_actualizado_en,
                 activo = excluded.activo
             """,
-            (sku, datos.nombre, datos.precio_centavos, ahora, datos.costo_centavos, ahora, datos.activo),
+            (
+                sku,
+                datos.nombre,
+                datos.precio_centavos,
+                ahora,
+                datos.costo_centavos,
+                ahora,
+                datos.activo,
+            ),
         )
     return {"status": "ok", "sku": sku}

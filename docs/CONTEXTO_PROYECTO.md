@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.2
+**Versión del documento:** 1.3
 
 ---
 
@@ -284,7 +284,7 @@ Las transacciones realizadas por un usuario revocado durante ese periodo se env�
 
 ## 7. Estructura actual del repositorio
 
-La estructura del proyecto es la siguiente. Las carpetas marcadas como *planeada* todavía no existen y se crearán al desarrollar esa parte:
+La estructura del proyecto es la siguiente:
 
 ```text
 pumaverso-pos/
@@ -305,9 +305,9 @@ pumaverso-pos/
 │   │   │       └── main.py
 │   │   ├── tests/
 │   │   └── pyproject.toml
-│   └── central/                 # servicios centrales (planeada, decisión 0002)
+│   └── central/                 # servicios centrales (decisión 0002)
 ├── packages/
-│   └── contratos/               # contrato de eventos compartido (planeada, decisión 0003)
+│   └── contratos/               # contrato de eventos compartido (decisión 0003)
 ├── docs/
 │   ├── decisiones/              # decisiones de arquitectura del equipo
 │   ├── arquitectura.md
@@ -369,7 +369,8 @@ Los siguientes puntos todavía requieren una decisión explícita del equipo:
 - Confirmar qué sucursales participan en el piloto. Deben operar con una sola caja (ver decisión 0004).
 - Establecer cuánto tiempo puede transcurrir antes de escalar un conteo físico pendiente.
 - Definir la fuente y el periodo de referencia para el historial de ventas.
-- Establecer quién puede aprobar ajustes de inventario.
+- Agregar credenciales a la API de central: hoy cualquiera que llegue a ella puede crear usuarios, cambiar precios o enviar eventos (ver decisión 0006).
+- Documentar como decisión el uso de un solo tipo de evento `traspaso` con campo `direccion` (salida o entrada).
 - Precisar el procedimiento para resolver ventas cuyo cobro no pudo confirmarse tras un apagón.
 
 Estas decisiones no deben asumirse como definitivas hasta que el equipo las acuerde y documente.
@@ -393,6 +394,11 @@ Hasta la elaboración de este documento:
 - Se documentaron las primeras cuatro decisiones de arquitectura en `docs/decisiones/`.
 - Se implementaron los módulos `persistencia` (conexión SQLite, transacciones y migraciones) y `eventos` (registro append-only, consecutivo sin huecos, hash y estado de sincronización), con sus pruebas. Ver decisión 0005.
 
-La implementación funcional de los demás módulos todavía está pendiente.
+- Se definió el contrato de eventos en `packages/contratos/` (decisión 0003).
+- Se implementaron catálogo, usuarios, inventario, punto de venta, sincronización y la API REST de la tienda.
+- Se implementó el servidor central en `apps/central/` con la cola de eventos en PostgreSQL (decisión 0001).
+- Se corrigieron cuatro fallas encontradas en revisión: vigencias, identidad de usuarios, bajada bloqueada por conflictos y validación en central (decisión 0006).
 
-**Próximo objetivo:** definir el contrato de eventos en `packages/contratos/` (decisión 0003) y mover ahí los tipos de evento que hoy viven en `eventos/registro.py`.
+Pendiente: procesos en segundo plano para sincronizar y procesar la cola, credenciales en la API de central, pantalla de caja y detección de inventario fantasma.
+
+**Próximo objetivo:** ejecutar la sincronización y la cola de central de forma automática, con reintentos usando `calcular_espera_reintento()`.
