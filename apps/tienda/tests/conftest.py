@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -5,6 +6,10 @@ from pathlib import Path
 import pytest
 
 from pumaverso_tienda.persistencia import abrir_conexion, aplicar_migraciones
+
+# Las pruebas no deben lanzar la sincronización automática contra un central real.
+# Las pruebas del trabajador la activan a propósito.
+os.environ["SYNC_AUTOMATICA"] = "false"
 
 
 @pytest.fixture

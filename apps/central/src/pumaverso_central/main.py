@@ -1,12 +1,14 @@
 """API de los servicios centrales de Pumaverso POS."""
 
+import asyncio
+import contextlib
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from typing import Annotated
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, HTTPException, Request, status
 from pumaverso_contratos import PATRON_IDENTIFICADOR, EventoContrato
 from pydantic import BaseModel, Field
 
@@ -18,19 +20,39 @@ from pumaverso_central.cola import (
 )
 from pumaverso_central.config import get_central_settings
 from pumaverso_central.db import abrir_conexion_central, inicializar_esquema_central
+from pumaverso_central.trabajador import TrabajadorCola
 
 settings = get_central_settings()
 
 
 @asynccontextmanager
-async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    """Crea esquemas y tablas en PostgreSQL al iniciar el servidor central."""
-    conn = abrir_conexion_central(get_central_settings().database_url)
+async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
+    """Crea esquemas y tablas en PostgreSQL y arranca el procesamiento de la cola."""
+    configuracion = get_central_settings()
+    conn = abrir_conexion_central(configuracion.database_url)
     try:
         inicializar_esquema_central(conn)
     finally:
         conn.close()
+
+    app_.state.trabajador_cola = None
+    tarea: asyncio.Task[None] | None = None
+    detener = asyncio.Event()
+    if configuracion.cola_automatica:
+        trabajador = TrabajadorCola(
+            abrir_conexion=lambda: abrir_conexion_central(configuracion.database_url),
+            lote=configuracion.cola_lote,
+            intervalo_segundos=configuracion.cola_intervalo_segundos,
+        )
+        app_.state.trabajador_cola = trabajador
+        tarea = asyncio.create_task(trabajador.ejecutar_siempre(detener))
+
     yield
+
+    if tarea is not None:
+        detener.set()
+        with contextlib.suppress(asyncio.CancelledError):
+            await tarea
 
 
 def obtener_conexion_central() -> Iterator[psycopg.Connection]:
@@ -164,6 +186,23 @@ def obtener_actualizaciones(
 def ejecutar_trabajador_cola(conn: ConexionCentralDep, limite: int = 50) -> dict[str, int]:
     resultado = procesar_eventos_pendientes_cola(conn, limite=limite)
     return {"procesados": resultado.procesados, "fallidos": resultado.fallidos}
+
+
+@app.get("/sincronizacion/cola/trabajador", tags=["Sincronización"])
+def consultar_trabajador_cola(request: Request) -> dict[str, object]:
+    """Cómo va el procesamiento automático de la cola."""
+    trabajador = getattr(request.app.state, "trabajador_cola", None)
+    if trabajador is None:
+        return {"automatico": False}
+    estado = trabajador.estado
+    return {
+        "automatico": True,
+        "ultimo_ciclo_en": estado.ultimo_ciclo_en.isoformat() if estado.ultimo_ciclo_en else None,
+        "procesados_total": estado.procesados_total,
+        "fallidos_total": estado.fallidos_total,
+        "fallos_consecutivos": estado.fallos_consecutivos,
+        "ultimo_error": estado.ultimo_error,
+    }
 
 
 @app.get("/sincronizacion/cola/fallidos", tags=["Sincronización"])

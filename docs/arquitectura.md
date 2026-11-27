@@ -53,3 +53,4 @@ Cada decisión vive en su propio archivo dentro de [`decisiones/`](decisiones/).
 | [0004](decisiones/0004-una-caja-por-sucursal.md) | Una caja por sucursal en V1 | Aceptada |
 | [0005](decisiones/0005-registro-de-eventos-inmutable.md) | Registro de eventos inmutable y estado de sincronización aparte | Aceptada |
 | [0006](decisiones/0006-vigencia-sesiones-y-validacion-en-central.md) | Vigencia desde la recepción, sesiones con PIN y validación en central | Aceptada |
+| [0007](decisiones/0007-sincronizacion-automatica.md) | Sincronización y cola automáticas dentro de cada aplicación | Aceptada |

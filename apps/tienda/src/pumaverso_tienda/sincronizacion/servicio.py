@@ -15,6 +15,7 @@ y precios, y no se bloquea al vencer las vigencias.
 
 import random
 import sqlite3
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any, Protocol
@@ -34,6 +35,10 @@ from pumaverso_tienda.eventos import (
 from pumaverso_tienda.persistencia.transacciones import transaccion
 from pumaverso_tienda.sincronizacion.reloj import registrar_bajada
 from pumaverso_tienda.usuarios import guardar_usuario_local
+
+# Una sola sincronización a la vez en este proceso: el trabajador automático y
+# el endpoint manual podrían coincidir y confirmar consecutivos fuera de orden.
+_CANDADO_SINCRONIZACION = threading.Lock()
 
 
 class ErrorSincronizacion(RuntimeError):
@@ -221,7 +226,29 @@ def sincronizar_nodo(
 
     Si la subida falla, la bajada ya quedó guardada y el error se propaga
     (``ErrorSincronizacion`` o ``ConflictoSincronizacionError``).
+
+    Si ya hay otra sincronización en curso en este proceso, espera a que termine.
     """
+    with _CANDADO_SINCRONIZACION:
+        return _sincronizar(
+            conexion,
+            sucursal_id=sucursal_id,
+            caja_id=caja_id,
+            transporte=transporte,
+            limite_lote=limite_lote,
+            ahora=ahora,
+        )
+
+
+def _sincronizar(
+    conexion: sqlite3.Connection,
+    *,
+    sucursal_id: str,
+    caja_id: str,
+    transporte: TransporteCentral,
+    limite_lote: int,
+    ahora: datetime | None,
+) -> ResultadoSincronizacion:
     referencia = _asegurar_zona_horaria(ahora)
 
     # 1. Bajada. Siempre completa (desde=None): la vigencia de cada dato se

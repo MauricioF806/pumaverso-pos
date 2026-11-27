@@ -1,5 +1,7 @@
+import time
 from datetime import UTC, datetime
 
+import psycopg
 from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 from pumaverso_contratos import (
@@ -13,7 +15,10 @@ from pumaverso_contratos import (
 )
 
 from pumaverso_central.cola import procesar_eventos_pendientes_cola
+from pumaverso_central.config import get_central_settings
+from pumaverso_central.db import abrir_conexion_central
 from pumaverso_central.main import app
+from pumaverso_central.trabajador import TrabajadorCola
 
 BASE = datetime(2026, 11, 25, 20, 0, tzinfo=UTC)
 
@@ -258,3 +263,89 @@ def test_el_hash_de_la_tienda_coincide_con_el_de_central():
     from pumaverso_central.cola import validar_evento_recibido
 
     validar_evento_recibido(_crear_evento_venta(1))
+
+
+# --- Procesamiento automático de la cola (decisión 0007) -----------------------
+
+
+class _RngTope:
+    def uniform(self, _minimo: float, maximo: float) -> float:
+        return maximo
+
+
+def _trabajador_cola(url: str, *, lote: int = 50, intervalo: float = 5.0) -> TrabajadorCola:
+    return TrabajadorCola(
+        abrir_conexion=lambda: abrir_conexion_central(url),
+        lote=lote,
+        intervalo_segundos=intervalo,
+        espera_maxima_segundos=60.0,
+        rng=_RngTope(),
+    )
+
+
+def test_el_trabajador_vacia_la_cola_por_lotes(conn_central, url_central_pruebas):
+    cliente = TestClient(app)
+    cliente.post(
+        "/sincronizacion/eventos",
+        json=_lote(_crear_evento_venta(1), _crear_evento_venta(2), _crear_evento_venta(3)),
+    )
+    trabajador = _trabajador_cola(url_central_pruebas, lote=2)
+
+    esperas = [trabajador.ejecutar_ciclo(), trabajador.ejecutar_ciclo()]
+
+    assert esperas == [0.0, 5.0]  # lote lleno: sigue de inmediato; después, intervalo normal
+    assert trabajador.estado.procesados_total == 3
+    existencia = conn_central.execute(
+        "SELECT cantidad FROM inventario.existencias_sucursal WHERE sucursal_id = 'S001'"
+    ).fetchone()
+    assert existencia["cantidad"] == -3
+
+
+def test_un_evento_apartado_no_cuenta_como_falla_del_trabajador(conn_central, url_central_pruebas):
+    _encolar_evento_corrupto(conn_central)
+    trabajador = _trabajador_cola(url_central_pruebas)
+
+    espera = trabajador.ejecutar_ciclo()
+
+    assert espera == 5.0
+    assert trabajador.estado.fallidos_total == 1
+    assert trabajador.estado.fallos_consecutivos == 0
+
+
+def test_si_postgresql_falla_reintenta_con_espera_creciente():
+    def sin_base():
+        raise psycopg.OperationalError("connection refused")
+
+    trabajador = TrabajadorCola(
+        abrir_conexion=sin_base,
+        lote=50,
+        intervalo_segundos=5.0,
+        espera_maxima_segundos=8.0,
+        rng=_RngTope(),
+    )
+
+    esperas = [trabajador.ejecutar_ciclo() for _ in range(5)]
+
+    assert esperas == [1.0, 2.0, 4.0, 8.0, 8.0]
+    assert trabajador.estado.fallos_consecutivos == 5
+    assert "connection refused" in trabajador.estado.ultimo_error
+
+
+def test_la_app_procesa_la_cola_sola(conn_central, monkeypatch):
+    monkeypatch.setenv("CENTRAL_COLA_AUTOMATICA", "true")
+    monkeypatch.setenv("CENTRAL_COLA_INTERVALO_SEGUNDOS", "0.05")
+    get_central_settings.cache_clear()
+    try:
+        with TestClient(app) as cliente:
+            cliente.post("/sincronizacion/eventos", json=_lote(_crear_evento_venta(1)))
+            limite = time.monotonic() + 5
+            estado = cliente.get("/sincronizacion/cola/trabajador").json()
+            while estado["procesados_total"] < 1 and time.monotonic() < limite:
+                time.sleep(0.05)
+                estado = cliente.get("/sincronizacion/cola/trabajador").json()
+
+        assert estado["automatico"] is True
+        assert estado["procesados_total"] == 1
+        assert estado["fallos_consecutivos"] == 0
+    finally:
+        get_central_settings.cache_clear()
