@@ -29,6 +29,7 @@ Pumaverso POS permite que cada sucursal opere de manera autónoma mediante un mo
 - `apps/tienda/`: monolito de cada sucursal.
 - `apps/central/`: servicios centrales.
 - `packages/contratos/`: contrato de eventos compartido entre tienda y central.
+- `apps/caja/`: pantalla de caja (React + Vite).
 - `docs/`: documentación técnica y arquitectónica.
 - `docs/decisiones/`: decisiones de arquitectura del equipo.
 - `scripts/`: herramientas de desarrollo.
@@ -85,6 +86,18 @@ La tienda sincroniza sola con central cada 60 segundos y reintenta con espera cr
 
 Los intervalos se cambian en `.env`. Para una demo conviene bajarlos, por ejemplo `SYNC_INTERVALO_SEGUNDOS=5`.
 
+### Pantalla de caja
+
+Necesita Node.js 20 o más nuevo. Con la tienda levantada, en otra terminal:
+
+```bash
+cd apps/caja
+npm install
+npm run dev
+```
+
+Abre `http://localhost:5173` y entra con un usuario de la demo (por ejemplo `cajero1` / `1234`). Más detalles en [`apps/caja/README.md`](apps/caja/README.md).
+
 ### Datos de demostración
 
 Con central y la tienda levantados, este comando carga 3 usuarios y 12 productos en central, sincroniza la tienda y deja 24 piezas de cada producto:
@@ -111,6 +124,7 @@ Consultas pensadas para la pantalla de caja (decisión 0008): `GET /auth/yo`, `G
 python -m pytest
 python -m ruff check apps packages
 python -m ruff check scripts --line-length 100
+cd apps/caja && npm test   # pruebas de la pantalla de caja
 ```
 
 Las pruebas de central necesitan PostgreSQL (`docker compose up -d`). Usan su propia base, `pumaverso_central_test`, que se crea sola; nunca tocan la de desarrollo. Si PostgreSQL no está disponible, esas pruebas se saltan con un aviso.

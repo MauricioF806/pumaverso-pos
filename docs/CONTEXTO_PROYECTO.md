@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.5
+**Versión del documento:** 1.6
 
 ---
 
@@ -305,7 +305,8 @@ pumaverso-pos/
 │   │   │       └── main.py
 │   │   ├── tests/
 │   │   └── pyproject.toml
-│   └── central/                 # servicios centrales (decisión 0002)
+│   ├── central/                 # servicios centrales (decisión 0002)
+│   └── caja/                    # pantalla de caja, React + Vite (decisión 0008)
 ├── packages/
 │   └── contratos/               # contrato de eventos compartido (decisión 0003)
 ├── docs/
@@ -403,6 +404,8 @@ Hasta la elaboración de este documento:
 
 - La API de la tienda está lista para la pantalla de caja: CORS, búsqueda de productos, ventas recientes y script de datos de demostración (decisión 0008).
 
-Pendiente: credenciales en la API de central, pantalla de caja y detección de inventario fantasma.
+- Se implementó la pantalla de caja en `apps/caja/`: inicio de sesión, cobro con escáner y búsqueda, ventas del turno con cancelación aprobada por gerente e indicador de conexión.
 
-**Próximo objetivo:** pantalla de caja en `apps/caja/` (TypeScript + React + Vite) sobre la API local, usando sesiones con token (decisión 0006).
+Pendiente: pantallas del gerente (recepciones, mermas y ajustes), detección de inventario fantasma, pruebas de falla para la demo y credenciales en la API de central.
+
+**Próximo objetivo:** pruebas de falla y detección de inventario fantasma (paso 8 del plan).

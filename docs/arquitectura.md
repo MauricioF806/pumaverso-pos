@@ -30,7 +30,7 @@ flowchart LR
 | Componente | Ubicación en el repositorio | Tecnología |
 |---|---|---|
 | Monolito de la sucursal | `apps/tienda/` | Python 3.13, FastAPI, SQLite |
-| Pantalla de caja | `apps/caja/` (planeada) | TypeScript, React, Vite; Tauri opcional |
+| Pantalla de caja | `apps/caja/` | TypeScript, React, Vite; Tauri opcional |
 | Servicios centrales | `apps/central/` | Python, FastAPI, PostgreSQL |
 | Contrato de eventos | `packages/contratos/` | Python, Pydantic |
 
