@@ -1,9 +1,10 @@
 """Endpoints para consultar estado y disparar sincronización con central."""
 
 import sqlite3
+from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from pydantic import BaseModel
 
 from pumaverso_tienda.api.dependencias import obtener_conexion, obtener_transporte_central
@@ -21,12 +22,23 @@ ConexionDep = Annotated[sqlite3.Connection, Depends(obtener_conexion)]
 TransporteDep = Annotated[TransporteCentral, Depends(obtener_transporte_central)]
 
 
+class EstadoTrabajadorResponse(BaseModel):
+    ultimo_intento_en: datetime | None
+    ultimo_exito_en: datetime | None
+    fallos_consecutivos: int
+    en_conflicto: bool
+    ultimo_error: str | None
+    proximo_intento_en: datetime | None
+
+
 class EstadoSyncResponse(BaseModel):
     sucursal_id: str
     caja_id: str
     ultimo_consecutivo: int
     ultimo_consecutivo_confirmado: int
     pendientes: int
+    sincronizacion_automatica: bool
+    trabajador: EstadoTrabajadorResponse | None = None
 
 
 class ResultadoSyncResponse(BaseModel):
@@ -38,14 +50,24 @@ class ResultadoSyncResponse(BaseModel):
 
 
 @router.get("/estado", response_model=EstadoSyncResponse)
-def consultar_estado_sync(conexion: ConexionDep) -> EstadoSyncResponse:
+def consultar_estado_sync(request: Request, conexion: ConexionDep) -> EstadoSyncResponse:
+    """Eventos pendientes y, si está activa, cómo va la sincronización automática."""
     settings = get_settings()
     estado = estado_sincronizacion_caja(conexion, settings.sucursal_id, settings.caja_id)
+    trabajador = getattr(request.app.state, "trabajador_sync", None)
     return EstadoSyncResponse(
         sucursal_id=settings.sucursal_id,
         caja_id=settings.caja_id,
         **estado,
+        sincronizacion_automatica=trabajador is not None,
+        trabajador=(
+            EstadoTrabajadorResponse(**_campos_estado(trabajador.estado)) if trabajador else None
+        ),
     )
+
+
+def _campos_estado(estado) -> dict[str, object]:
+    return {campo: getattr(estado, campo) for campo in EstadoTrabajadorResponse.model_fields}
 
 
 @router.post("/ejecutar", response_model=ResultadoSyncResponse)

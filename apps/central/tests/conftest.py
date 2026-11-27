@@ -17,6 +17,9 @@ from psycopg.conninfo import conninfo_to_dict, make_conninfo
 from pumaverso_central.config import get_central_settings
 from pumaverso_central.db import abrir_conexion_central, inicializar_esquema_central
 
+# Las pruebas procesan la cola a mano; las del trabajador lo activan a propósito.
+os.environ["CENTRAL_COLA_AUTOMATICA"] = "false"
+
 URL_PRUEBAS_POR_DEFECTO = "postgresql://pumaverso:pumaverso@127.0.0.1:5432/pumaverso_central_test"
 
 # Si PostgreSQL no responde, no esperar indefinidamente antes de saltar las pruebas.

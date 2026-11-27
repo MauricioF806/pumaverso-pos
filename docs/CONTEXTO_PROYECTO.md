@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.3
+**Versión del documento:** 1.4
 
 ---
 
@@ -399,6 +399,8 @@ Hasta la elaboración de este documento:
 - Se implementó el servidor central en `apps/central/` con la cola de eventos en PostgreSQL (decisión 0001).
 - Se corrigieron cuatro fallas encontradas en revisión: vigencias, identidad de usuarios, bajada bloqueada por conflictos y validación en central (decisión 0006).
 
-Pendiente: procesos en segundo plano para sincronizar y procesar la cola, credenciales en la API de central, pantalla de caja y detección de inventario fantasma.
+- La tienda sincroniza y central procesa su cola automáticamente, con reintentos y espera creciente (decisión 0007).
 
-**Próximo objetivo:** ejecutar la sincronización y la cola de central de forma automática, con reintentos usando `calcular_espera_reintento()`.
+Pendiente: credenciales en la API de central, pantalla de caja y detección de inventario fantasma.
+
+**Próximo objetivo:** pantalla de caja (TypeScript + React + Tauri) sobre la API local, usando sesiones con token (decisión 0006).

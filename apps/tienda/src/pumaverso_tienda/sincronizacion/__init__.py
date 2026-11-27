@@ -21,16 +21,22 @@ from pumaverso_tienda.sincronizacion.servicio import (
     estado_sincronizacion_caja,
     sincronizar_nodo,
 )
+from pumaverso_tienda.sincronizacion.trabajador import (
+    EstadoTrabajador,
+    TrabajadorSincronizacion,
+)
 
 __all__ = [
     "ActualizacionProducto",
     "ActualizacionUsuario",
     "ConflictoSincronizacionError",
     "ErrorSincronizacion",
+    "EstadoTrabajador",
     "PaqueteBajada",
     "RelojAtrasadoError",
     "RespuestaSubida",
     "ResultadoSincronizacion",
+    "TrabajadorSincronizacion",
     "TransporteCentral",
     "TransporteCentralHttp",
     "calcular_espera_reintento",

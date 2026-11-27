@@ -26,6 +26,12 @@ class Settings(BaseSettings):
     central_url: str = "http://127.0.0.1:8001"
     sync_lote_maximo: int = Field(default=100, ge=1, le=1000)
 
+    # Sincronización automática en segundo plano (decisión 0007).
+    sync_automatica: bool = True
+    sync_intervalo_segundos: float = Field(default=60.0, gt=0)
+    # Tope de espera entre reintentos cuando central no responde.
+    sync_espera_maxima_segundos: float = Field(default=300.0, gt=0)
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

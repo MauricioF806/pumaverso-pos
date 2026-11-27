@@ -78,6 +78,13 @@ python -m uvicorn pumaverso_tienda.main:app --reload
 
 La documentación interactiva de cada uno está en `/docs` (`http://127.0.0.1:8000/docs` y `http://127.0.0.1:8001/docs`).
 
+La tienda sincroniza sola con central cada 60 segundos y reintenta con espera creciente si central no responde. Central procesa su cola cada 5 segundos (decisión 0007). Para ver cómo va:
+
+- Tienda: `GET /sincronizacion/estado`
+- Central: `GET /sincronizacion/cola/trabajador` y `GET /sincronizacion/cola/fallidos`
+
+Los intervalos se cambian en `.env`. Para una demo conviene bajarlos, por ejemplo `SYNC_INTERVALO_SEGUNDOS=5`.
+
 ### Uso de la API de la tienda
 
 Las operaciones requieren una sesión (decisión 0006):
