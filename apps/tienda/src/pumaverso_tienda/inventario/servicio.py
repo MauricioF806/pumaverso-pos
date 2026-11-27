@@ -17,6 +17,8 @@ from pumaverso_contratos import (
 from pumaverso_tienda.catalogo import ProductoNoEncontradoError, obtener_producto
 from pumaverso_tienda.eventos import Evento, registrar_evento
 from pumaverso_tienda.persistencia.transacciones import transaccion
+from pumaverso_tienda.sincronizacion.reloj import validar_reloj_local
+from pumaverso_tienda.usuarios import validar_aprobador, validar_usuario_operativo
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +76,7 @@ def registrar_recepcion_proveedor(
     ahora: datetime | None = None,
 ) -> Evento:
     """Registra entrada de mercancía de proveedor y su evento de forma atómica."""
+    referencia = _validar_operador(conexion, sucursal_id, caja_id, usuario_id, ahora)
     total_centavos = sum(p.cantidad * p.costo_unitario_centavos for p in partidas)
     contenido = ContenidoRecepcionProveedor(
         proveedor_id=proveedor_id,
@@ -83,7 +86,7 @@ def registrar_recepcion_proveedor(
     )
     with transaccion(conexion):
         for partida in contenido.partidas:
-            ajustar_existencia_local(conexion, partida.sku, partida.cantidad, ahora=ahora)
+            ajustar_existencia_local(conexion, partida.sku, partida.cantidad, ahora=referencia)
         return registrar_evento(
             conexion,
             sucursal_id=sucursal_id,
@@ -91,7 +94,7 @@ def registrar_recepcion_proveedor(
             tipo=TipoEvento.RECEPCION_PROVEEDOR,
             contenido=serializar_contenido_evento(contenido),
             usuario_id=usuario_id,
-            ahora=ahora,
+            ahora=referencia,
         )
 
 
@@ -107,9 +110,10 @@ def registrar_merma(
     ahora: datetime | None = None,
 ) -> Evento:
     """Descuenta mercancía mermada y registra el evento de forma atómica."""
+    referencia = _validar_operador(conexion, sucursal_id, caja_id, usuario_id, ahora)
     contenido = ContenidoMerma(sku=sku, cantidad=cantidad, motivo=motivo)
     with transaccion(conexion):
-        ajustar_existencia_local(conexion, contenido.sku, -contenido.cantidad, ahora=ahora)
+        ajustar_existencia_local(conexion, contenido.sku, -contenido.cantidad, ahora=referencia)
         return registrar_evento(
             conexion,
             sucursal_id=sucursal_id,
@@ -117,7 +121,7 @@ def registrar_merma(
             tipo=TipoEvento.MERMA,
             contenido=serializar_contenido_evento(contenido),
             usuario_id=usuario_id,
-            ahora=ahora,
+            ahora=referencia,
         )
 
 
@@ -134,6 +138,8 @@ def registrar_ajuste_inventario(
     ahora: datetime | None = None,
 ) -> Evento:
     """Aplica un ajuste aprobado de inventario y registra el evento de forma atómica."""
+    referencia = _validar_operador(conexion, sucursal_id, caja_id, usuario_id, ahora)
+    validar_aprobador(conexion, aprobado_por, operador_id=usuario_id, ahora=referencia)
     contenido = ContenidoAjuste(
         sku=sku,
         diferencia_cantidad=diferencia_cantidad,
@@ -142,7 +148,7 @@ def registrar_ajuste_inventario(
     )
     with transaccion(conexion):
         ajustar_existencia_local(
-            conexion, contenido.sku, contenido.diferencia_cantidad, ahora=ahora
+            conexion, contenido.sku, contenido.diferencia_cantidad, ahora=referencia
         )
         return registrar_evento(
             conexion,
@@ -151,8 +157,25 @@ def registrar_ajuste_inventario(
             tipo=TipoEvento.AJUSTE,
             contenido=serializar_contenido_evento(contenido),
             usuario_id=usuario_id,
-            ahora=ahora,
+            ahora=referencia,
         )
+
+
+def _validar_operador(
+    conexion: sqlite3.Connection,
+    sucursal_id: str,
+    caja_id: str,
+    usuario_id: str,
+    ahora: datetime | None,
+) -> datetime:
+    """Reloj al día y usuario activo y vigente, igual que en una venta."""
+    referencia = ahora if ahora is not None else datetime.now(UTC)
+    if referencia.tzinfo is None:
+        raise ValueError("La fecha debe incluir zona horaria.")
+    referencia = referencia.astimezone(UTC)
+    validar_reloj_local(conexion, sucursal_id, caja_id, referencia)
+    validar_usuario_operativo(conexion, usuario_id, ahora=referencia)
+    return referencia
 
 
 def _normalizar_utc(ahora: datetime | None) -> str:

@@ -44,6 +44,10 @@ CREATE TABLE IF NOT EXISTS sincronizacion.cola_eventos (
     UNIQUE (sucursal_id, caja_id, consecutivo)
 );
 
+-- Eventos que fallaron al procesarse: se apartan para revisión y no frenan la cola.
+ALTER TABLE sincronizacion.cola_eventos ADD COLUMN IF NOT EXISTS fallido_en TIMESTAMPTZ NULL;
+ALTER TABLE sincronizacion.cola_eventos ADD COLUMN IF NOT EXISTS error TEXT NULL;
+
 CREATE INDEX IF NOT EXISTS idx_cola_eventos_pendientes
     ON sincronizacion.cola_eventos (id)
     WHERE procesado_en IS NULL;

@@ -27,15 +27,15 @@ Pumaverso POS permite que cada sucursal opere de manera autónoma mediante un mo
 ## Estructura del proyecto
 
 - `apps/tienda/`: monolito de cada sucursal.
-- `apps/central/`: servicios centrales (planeada).
-- `packages/contratos/`: contrato de eventos compartido entre tienda y central (planeada).
+- `apps/central/`: servicios centrales.
+- `packages/contratos/`: contrato de eventos compartido entre tienda y central.
 - `docs/`: documentación técnica y arquitectónica.
 - `docs/decisiones/`: decisiones de arquitectura del equipo.
 - `scripts/`: herramientas de desarrollo.
 
 ## Desarrollo
 
-El monolito utiliza Python 3.13.
+El proyecto utiliza Python 3.13. El servidor central necesita además PostgreSQL, que se levanta con Docker.
 
 Para preparar el entorno virtual en Windows (Git Bash):
 
@@ -51,10 +51,10 @@ python3.13 -m venv .venv
 source .venv/bin/activate
 ```
 
-Instalar el monolito y sus dependencias de desarrollo (desde la raíz del repositorio):
+Instalar los tres paquetes y sus dependencias de desarrollo (desde la raíz del repositorio). El contrato va primero, porque la tienda y central dependen de él y no está publicado en PyPI:
 
 ```bash
-python -m pip install -e "apps/tienda[dev]"
+python -m pip install -e "packages/contratos[dev]" -e "apps/tienda[dev]" -e "apps/central[dev]"
 ```
 
 Crear el archivo de configuración local a partir del ejemplo:
@@ -63,20 +63,37 @@ Crear el archivo de configuración local a partir del ejemplo:
 cp .env.example .env
 ```
 
-Levantar el servidor local:
+Levantar PostgreSQL y el servidor central (puerto 8001):
+
+```bash
+docker compose up -d
+python -m uvicorn pumaverso_central.main:app --reload --port 8001
+```
+
+Levantar el nodo de la sucursal (puerto 8000), en otra terminal:
 
 ```bash
 python -m uvicorn pumaverso_tienda.main:app --reload
 ```
 
-La API queda disponible en `http://127.0.0.1:8000`. La documentación interactiva está en `http://127.0.0.1:8000/docs` y la verificación de salud en `http://127.0.0.1:8000/health`.
+La documentación interactiva de cada uno está en `/docs` (`http://127.0.0.1:8000/docs` y `http://127.0.0.1:8001/docs`).
 
-Ejecutar las pruebas y el revisor de estilo:
+### Uso de la API de la tienda
+
+Las operaciones requieren una sesión (decisión 0006):
+
+1. `POST /auth/login` con `usuario_id` y `pin` devuelve un `token`.
+2. Cada operación lleva el encabezado `Authorization: Bearer <token>` y queda a nombre de ese usuario.
+3. Cancelaciones y ajustes piden además `aprobador_id` y `aprobador_pin` de un gerente o supervisor distinto de quien opera.
+
+### Pruebas
 
 ```bash
 python -m pytest
-python -m ruff check apps/tienda
+python -m ruff check apps packages
 ```
+
+Las pruebas de central necesitan PostgreSQL (`docker compose up -d`). Usan su propia base, `pumaverso_central_test`, que se crea sola; nunca tocan la de desarrollo. Si PostgreSQL no está disponible, esas pruebas se saltan con un aviso.
 
 ## Equipo
 

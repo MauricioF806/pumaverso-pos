@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from pumaverso_tienda.api.dependencias import obtener_conexion, obtener_transporte_central
 from pumaverso_tienda.config import get_settings
 from pumaverso_tienda.sincronizacion import (
+    ConflictoSincronizacionError,
     ErrorSincronizacion,
     TransporteCentral,
     estado_sincronizacion_caja,
@@ -48,9 +49,7 @@ def consultar_estado_sync(conexion: ConexionDep) -> EstadoSyncResponse:
 
 
 @router.post("/ejecutar", response_model=ResultadoSyncResponse)
-def ejecutar_sync(
-    conexion: ConexionDep, transporte: TransporteDep
-) -> ResultadoSyncResponse:
+def ejecutar_sync(conexion: ConexionDep, transporte: TransporteDep) -> ResultadoSyncResponse:
     settings = get_settings()
     try:
         resultado = sincronizar_nodo(
@@ -60,6 +59,12 @@ def ejecutar_sync(
             transporte=transporte,
             limite_lote=settings.sync_lote_maximo,
         )
+    except ConflictoSincronizacionError as error:
+        # La bajada (usuarios y precios) sí se aplicó; solo la subida quedó detenida.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{error} Los usuarios y precios sí se actualizaron. Requiere revisión.",
+        ) from error
     except ErrorSincronizacion as error:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(error)

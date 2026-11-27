@@ -15,6 +15,8 @@ from pumaverso_contratos.eventos import (
     LineaRecepcion,
     LineaTraspaso,
     TipoEvento,
+    calcular_hash_evento,
+    formatear_registrado_en,
     serializar_contenido_evento,
     validar_contenido_por_tipo,
 )
@@ -34,6 +36,8 @@ __all__ = [
     "LineaRecepcion",
     "LineaTraspaso",
     "TipoEvento",
+    "calcular_hash_evento",
+    "formatear_registrado_en",
     "serializar_contenido_evento",
     "validar_contenido_por_tipo",
 ]

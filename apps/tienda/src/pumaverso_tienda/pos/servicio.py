@@ -17,20 +17,11 @@ from pumaverso_tienda.catalogo import validar_producto_para_venta
 from pumaverso_tienda.eventos import Evento, obtener_evento, registrar_evento
 from pumaverso_tienda.inventario import ajustar_existencia_local
 from pumaverso_tienda.persistencia.transacciones import transaccion
-from pumaverso_tienda.usuarios import (
-    TTL_CREDENCIALES,
-    CredencialesExpiradasError,
-    CredencialesInvalidasError,
-    UsuarioInactivoError,
-    obtener_usuario,
-)
+from pumaverso_tienda.sincronizacion.reloj import validar_reloj_local
+from pumaverso_tienda.usuarios import validar_aprobador, validar_usuario_operativo
 
 VENTANA_ALERTA_NEGATIVO = timedelta(hours=24)
 UMBRAL_EVENTOS_NEGATIVOS = 2
-
-
-class RelojAtrasadoError(RuntimeError):
-    """El reloj local es anterior a la última sincronización confirmada."""
 
 
 class VentaNoCancelableError(ValueError):
@@ -70,8 +61,8 @@ def registrar_venta(
         raise ValueError("La venta debe incluir al menos un producto.")
 
     referencia = _asegurar_zona_horaria(ahora)
-    _validar_reloj_local(conexion, sucursal_id, caja_id, referencia)
-    _validar_usuario_operativo(conexion, usuario_id, referencia)
+    validar_reloj_local(conexion, sucursal_id, caja_id, referencia)
+    validar_usuario_operativo(conexion, usuario_id, ahora=referencia)
 
     partidas: list[LineaProducto] = []
     skus_revision: list[str] = []
@@ -147,9 +138,15 @@ def cancelar_venta(
     aprobado_por: str,
     ahora: datetime | None = None,
 ) -> Evento:
-    """Registra una cancelación append-only y reintegra las existencias vendidas."""
+    """Registra una cancelación append-only y reintegra las existencias vendidas.
+
+    ``aprobado_por`` debe ser un gerente o supervisor vigente distinto de quien
+    cancela. Comprobar su PIN le corresponde a quien llama (la API lo hace).
+    """
     referencia = _asegurar_zona_horaria(ahora)
-    _validar_usuario_operativo(conexion, usuario_id, referencia)
+    validar_reloj_local(conexion, sucursal_id, caja_id, referencia)
+    validar_usuario_operativo(conexion, usuario_id, ahora=referencia)
+    validar_aprobador(conexion, aprobado_por, operador_id=usuario_id, ahora=referencia)
 
     original = obtener_evento(conexion, sucursal_id, caja_id, consecutivo_original)
     if original is None or original.tipo is not TipoEvento.VENTA:
@@ -178,9 +175,7 @@ def cancelar_venta(
 
     with transaccion(conexion):
         for partida in venta_original.partidas:
-            ajustar_existencia_local(
-                conexion, partida.sku, partida.cantidad, ahora=referencia
-            )
+            ajustar_existencia_local(conexion, partida.sku, partida.cantidad, ahora=referencia)
 
         evento = registrar_evento(
             conexion,
@@ -206,38 +201,6 @@ def cancelar_venta(
             ),
         )
         return evento
-
-
-def _validar_reloj_local(
-    conexion: sqlite3.Connection, sucursal_id: str, caja_id: str, referencia: datetime
-) -> None:
-    fila = conexion.execute(
-        """
-        SELECT actualizado_en FROM estado_sincronizacion
-        WHERE sucursal_id = ? AND caja_id = ?
-        """,
-        (sucursal_id, caja_id),
-    ).fetchone()
-    if fila is not None:
-        ultima_sync = datetime.fromisoformat(fila["actualizado_en"])
-        if referencia < ultima_sync:
-            raise RelojAtrasadoError(
-                "El reloj local es anterior a la última sincronización registrada."
-            )
-
-
-def _validar_usuario_operativo(
-    conexion: sqlite3.Connection, usuario_id: str, referencia: datetime
-) -> None:
-    usuario = obtener_usuario(conexion, usuario_id)
-    if usuario is None:
-        raise CredencialesInvalidasError(f"El usuario '{usuario_id}' no existe localmente.")
-    if not usuario.activo:
-        raise UsuarioInactivoError(f"El usuario '{usuario_id}' está dado de baja.")
-    if referencia - datetime.fromisoformat(usuario.actualizado_en) > TTL_CREDENCIALES:
-        raise CredencialesExpiradasError(
-            "Las credenciales del usuario superaron el TTL de 24 horas."
-        )
 
 
 def _evaluar_alerta_inventario_negativo(

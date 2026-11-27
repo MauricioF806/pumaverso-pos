@@ -100,11 +100,29 @@ CREATE TABLE ventas_canceladas (
 ) STRICT;
 """
 
+# Decisión 0006: la vigencia offline se cuenta desde que la tienda recibe los
+# datos, y las operaciones se hacen con una sesión iniciada con PIN.
+_0004_SESIONES_Y_ULTIMA_BAJADA = """
+CREATE TABLE estado_bajada (
+    id                INTEGER PRIMARY KEY CHECK (id = 1),
+    ultima_bajada_en  TEXT    NOT NULL
+) STRICT;
+
+CREATE TABLE sesiones (
+    token_hash  TEXT PRIMARY KEY,
+    usuario_id  TEXT NOT NULL,
+    creada_en   TEXT NOT NULL,
+    expira_en   TEXT NOT NULL
+) STRICT;
+"""
+
 MIGRACIONES: tuple[tuple[int, str], ...] = (
     (1, _0001_REGISTRO_DE_EVENTOS),
     (2, _0002_CATALOGO_Y_USUARIOS),
     (3, _0003_INVENTARIO_Y_POS),
+    (4, _0004_SESIONES_Y_ULTIMA_BAJADA),
 )
+
 
 class MigracionError(RuntimeError):
     """El esquema de la base de datos no se puede llevar a la versión esperada."""

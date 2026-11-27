@@ -7,6 +7,10 @@
   precios/costos.
 - Resiliencia: provee cálculo de backoff exponencial con jitter para
   reintentos cuando central no está disponible.
+
+Orden de un ciclo (decisión 0006): primero la bajada y después la subida. Así,
+aunque central rechace un evento, la tienda sigue recibiendo bajas de personal
+y precios, y no se bloquea al vencer las vigencias.
 """
 
 import random
@@ -20,6 +24,7 @@ from pumaverso_contratos import EventoContrato
 
 from pumaverso_tienda.catalogo import guardar_producto
 from pumaverso_tienda.eventos import (
+    ConfirmacionInvalidaError,
     Evento,
     confirmar_hasta,
     eventos_pendientes,
@@ -27,11 +32,20 @@ from pumaverso_tienda.eventos import (
     ultimo_consecutivo_confirmado,
 )
 from pumaverso_tienda.persistencia.transacciones import transaccion
+from pumaverso_tienda.sincronizacion.reloj import registrar_bajada
 from pumaverso_tienda.usuarios import guardar_usuario_local
 
 
 class ErrorSincronizacion(RuntimeError):
     """Fallo de comunicación o respuesta inválida del servidor central."""
+
+
+class ConflictoSincronizacionError(ErrorSincronizacion):
+    """Central rechazó los eventos de esta caja porque no coinciden con los que ya tiene.
+
+    Suele ocurrir si la caja se reinstaló con una base de datos nueva y la misma
+    SUCURSAL_ID/CAJA_ID. Reintentar no lo arregla: requiere revisión.
+    """
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,9 +133,16 @@ class TransporteCentralHttp:
                 json=payload,
                 timeout=self._timeout,
             )
-            respuesta.raise_for_status()
         except httpx.HTTPError as error:
             raise ErrorSincronizacion(f"Error al subir eventos a central: {error}") from error
+        if respuesta.status_code == httpx.codes.CONFLICT:
+            raise ConflictoSincronizacionError(
+                f"Central rechazó los eventos por conflicto: {_detalle(respuesta)}"
+            )
+        if respuesta.is_error:
+            raise ErrorSincronizacion(
+                f"Central respondió {respuesta.status_code} al subir eventos: {_detalle(respuesta)}"
+            )
 
         datos = respuesta.json()
         return RespuestaSubida(
@@ -129,9 +150,7 @@ class TransporteCentralHttp:
             hueco_detectado_desde=datos.get("hueco_detectado_desde"),
         )
 
-    def descargar_actualizaciones(
-        self, sucursal_id: str, desde: datetime | None
-    ) -> PaqueteBajada:
+    def descargar_actualizaciones(self, sucursal_id: str, desde: datetime | None) -> PaqueteBajada:
         params: dict[str, str] = {"sucursal_id": sucursal_id}
         if desde is not None:
             params["desde"] = desde.astimezone(UTC).isoformat()
@@ -198,8 +217,41 @@ def sincronizar_nodo(
     limite_lote: int = 100,
     ahora: datetime | None = None,
 ) -> ResultadoSincronizacion:
-    """Ejecuta un ciclo de subida de eventos pendientes y bajada de catálogo/usuarios."""
+    """Ejecuta un ciclo de sincronización: primero bajada y después subida.
+
+    Si la subida falla, la bajada ya quedó guardada y el error se propaga
+    (``ErrorSincronizacion`` o ``ConflictoSincronizacionError``).
+    """
     referencia = _asegurar_zona_horaria(ahora)
+
+    # 1. Bajada. Siempre completa (desde=None): la vigencia de cada dato se
+    #    cuenta desde este momento, así que central debe enviarlos todos.
+    bajada = transporte.descargar_actualizaciones(sucursal_id, desde=None)
+    with transaccion(conexion):
+        for usuario in bajada.usuarios:
+            guardar_usuario_local(
+                conexion,
+                usuario_id=usuario.usuario_id,
+                nombre=usuario.nombre,
+                rol=usuario.rol,
+                hash_pin=usuario.hash_pin,
+                activo=usuario.activo,
+                actualizado_en=referencia,
+            )
+        for producto in bajada.productos:
+            guardar_producto(
+                conexion,
+                sku=producto.sku,
+                nombre=producto.nombre,
+                precio_centavos=producto.precio_centavos,
+                precio_actualizado_en=referencia,
+                costo_centavos=producto.costo_centavos,
+                costo_actualizado_en=referencia,
+                activo=producto.activo,
+            )
+        registrar_bajada(conexion, referencia)
+
+    # 2. Subida de eventos pendientes.
     pendientes = eventos_pendientes(conexion, sucursal_id, caja_id, limite=limite_lote)
     confirmado = ultimo_consecutivo_confirmado(conexion, sucursal_id, caja_id)
     hueco: int | None = None
@@ -209,39 +261,19 @@ def sincronizar_nodo(
         respuesta = transporte.subir_eventos(sucursal_id, caja_id, contratos)
         hueco = respuesta.hueco_detectado_desde
         if respuesta.ultimo_consecutivo_confirmado > confirmado:
-            confirmar_hasta(
-                conexion,
-                sucursal_id,
-                caja_id,
-                respuesta.ultimo_consecutivo_confirmado,
-                ahora=referencia,
-            )
+            try:
+                confirmar_hasta(
+                    conexion,
+                    sucursal_id,
+                    caja_id,
+                    respuesta.ultimo_consecutivo_confirmado,
+                    ahora=referencia,
+                )
+            except ConfirmacionInvalidaError as error:
+                raise ConflictoSincronizacionError(
+                    f"Central confirmó más eventos de los que tiene esta caja: {error}"
+                ) from error
             confirmado = respuesta.ultimo_consecutivo_confirmado
-
-    bajada = transporte.descargar_actualizaciones(sucursal_id, desde=None)
-    if bajada.usuarios or bajada.productos:
-        with transaccion(conexion):
-            for usuario in bajada.usuarios:
-                guardar_usuario_local(
-                    conexion,
-                    usuario_id=usuario.usuario_id,
-                    nombre=usuario.nombre,
-                    rol=usuario.rol,
-                    hash_pin=usuario.hash_pin,
-                    activo=usuario.activo,
-                    actualizado_en=usuario.actualizado_en,
-                )
-            for producto in bajada.productos:
-                guardar_producto(
-                    conexion,
-                    sku=producto.sku,
-                    nombre=producto.nombre,
-                    precio_centavos=producto.precio_centavos,
-                    precio_actualizado_en=producto.precio_actualizado_en,
-                    costo_centavos=producto.costo_centavos,
-                    costo_actualizado_en=producto.costo_actualizado_en,
-                    activo=producto.activo,
-                )
 
     return ResultadoSincronizacion(
         eventos_enviados=len(pendientes),
@@ -284,3 +316,10 @@ def _asegurar_zona_horaria(ahora: datetime | None) -> datetime:
     if momento.tzinfo is None:
         raise ValueError("La fecha debe incluir zona horaria.")
     return momento.astimezone(UTC)
+
+
+def _detalle(respuesta: httpx.Response) -> str:
+    try:
+        return str(respuesta.json().get("detail", respuesta.text))
+    except ValueError:
+        return respuesta.text

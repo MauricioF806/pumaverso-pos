@@ -18,7 +18,13 @@ from pumaverso_tienda.pos import (
     cancelar_venta,
     registrar_venta,
 )
-from pumaverso_tienda.usuarios import generar_hash_pin, guardar_usuario_local
+from pumaverso_tienda.usuarios import (
+    AprobacionInvalidaError,
+    CredencialesInvalidasError,
+    UsuarioInactivoError,
+    generar_hash_pin,
+    guardar_usuario_local,
+)
 
 SUCURSAL = "S001"
 CAJA = "C01"
@@ -33,6 +39,14 @@ def entorno_tienda(conexion):
         nombre="Ana López",
         rol="cajero",
         hash_pin=generar_hash_pin("1234"),
+        actualizado_en=BASE,
+    )
+    guardar_usuario_local(
+        conexion,
+        usuario_id="gerente-1",
+        nombre="Rosa Díaz",
+        rol="gerente",
+        hash_pin=generar_hash_pin("9999"),
         actualizado_en=BASE,
     )
     guardar_producto(
@@ -179,30 +193,6 @@ def test_venta_bloquea_precio_expirado_y_reloj_atrasado(entorno_tienda):
             ahora=BASE + timedelta(hours=73),
         )
 
-    # Registramos una venta válida y confirmamos sincronización a las 11:00 UTC.
-    v = registrar_venta(
-        entorno_tienda,
-        sucursal_id=SUCURSAL,
-        caja_id=CAJA,
-        usuario_id="cajero-1",
-        items=[ItemVentaSolicitado(sku="coca-600", cantidad=1)],
-        ahora=BASE + timedelta(hours=1),
-    )
-    confirmar_hasta(
-        entorno_tienda, SUCURSAL, CAJA, v.evento.consecutivo, ahora=BASE + timedelta(hours=1)
-    )
-
-    # Si el reloj retrocede antes de las 11:00 UTC, se bloquean las ventas.
-    with pytest.raises(RelojAtrasadoError):
-        registrar_venta(
-            entorno_tienda,
-            sucursal_id=SUCURSAL,
-            caja_id=CAJA,
-            usuario_id="cajero-1",
-            items=[ItemVentaSolicitado(sku="coca-600", cantidad=1)],
-            ahora=BASE + timedelta(minutes=30),
-        )
-
 
 def test_merma_y_ajuste_actualizan_existencias_y_eventos(entorno_tienda):
     registrar_recepcion_proveedor(
@@ -237,3 +227,134 @@ def test_merma_y_ajuste_actualizan_existencias_y_eventos(entorno_tienda):
         ahora=BASE + timedelta(minutes=20),
     )
     assert obtener_existencia(entorno_tienda, "coca-600") == 15
+
+
+# --- Revisión, falla 2: el operador y el aprobador se validan ------------------
+
+
+def _venta(conexion, minutos: int = 5):
+    return registrar_venta(
+        conexion,
+        sucursal_id=SUCURSAL,
+        caja_id=CAJA,
+        usuario_id="cajero-1",
+        items=[ItemVentaSolicitado(sku="coca-600", cantidad=1)],
+        ahora=BASE + timedelta(minutes=minutos),
+    )
+
+
+def _cancelar(conexion, consecutivo: int, aprobado_por: str, usuario_id: str = "cajero-1"):
+    return cancelar_venta(
+        conexion,
+        sucursal_id=SUCURSAL,
+        caja_id=CAJA,
+        usuario_id=usuario_id,
+        consecutivo_original=consecutivo,
+        motivo="Devolución",
+        aprobado_por=aprobado_por,
+        ahora=BASE + timedelta(minutes=10),
+    )
+
+
+@pytest.mark.parametrize(
+    "aprobado_por",
+    ["jefe-fantasma", "cajero-1"],
+    ids=["aprobador-inexistente", "se-aprueba-a-si-mismo"],
+)
+def test_cancelacion_rechaza_aprobador_invalido(entorno_tienda, aprobado_por):
+    venta = _venta(entorno_tienda)
+
+    with pytest.raises(AprobacionInvalidaError):
+        _cancelar(entorno_tienda, venta.evento.consecutivo, aprobado_por)
+
+    assert obtener_existencia(entorno_tienda, "coca-600") == -1  # no se reintegró nada
+
+
+def test_cancelacion_rechaza_aprobador_sin_rol_de_gerente(entorno_tienda):
+    guardar_usuario_local(
+        entorno_tienda,
+        usuario_id="cajero-2",
+        nombre="Luis",
+        rol="cajero",
+        hash_pin=generar_hash_pin("5678"),
+        actualizado_en=BASE,
+    )
+    venta = _venta(entorno_tienda)
+
+    with pytest.raises(AprobacionInvalidaError, match="no puede aprobar"):
+        _cancelar(entorno_tienda, venta.evento.consecutivo, "cajero-2")
+
+
+def test_cancelacion_rechaza_aprobador_dado_de_baja(entorno_tienda):
+    venta = _venta(entorno_tienda)
+    guardar_usuario_local(
+        entorno_tienda,
+        usuario_id="gerente-1",
+        nombre="Rosa Díaz",
+        rol="gerente",
+        hash_pin=generar_hash_pin("9999"),
+        activo=False,
+        actualizado_en=BASE,
+    )
+
+    with pytest.raises(AprobacionInvalidaError, match="dado de baja"):
+        _cancelar(entorno_tienda, venta.evento.consecutivo, "gerente-1")
+
+
+def test_merma_rechaza_usuario_inexistente(entorno_tienda):
+    with pytest.raises(CredencialesInvalidasError):
+        registrar_merma(
+            entorno_tienda,
+            sucursal_id=SUCURSAL,
+            caja_id=CAJA,
+            usuario_id="nadie",
+            sku="coca-600",
+            cantidad=5,
+            motivo="Se cayeron",
+            ahora=BASE,
+        )
+    assert obtener_existencia(entorno_tienda, "coca-600") == 0
+
+
+def test_ajuste_rechaza_usuario_dado_de_baja(entorno_tienda):
+    guardar_usuario_local(
+        entorno_tienda,
+        usuario_id="cajero-1",
+        nombre="Ana López",
+        rol="cajero",
+        hash_pin=generar_hash_pin("1234"),
+        activo=False,
+        actualizado_en=BASE,
+    )
+
+    with pytest.raises(UsuarioInactivoError):
+        registrar_ajuste_inventario(
+            entorno_tienda,
+            sucursal_id=SUCURSAL,
+            caja_id=CAJA,
+            usuario_id="cajero-1",
+            sku="coca-600",
+            diferencia_cantidad=-10,
+            motivo="Conteo",
+            aprobado_por="gerente-1",
+            ahora=BASE,
+        )
+
+
+def test_recepcion_tambien_revisa_el_reloj(entorno_tienda):
+    venta = _venta(entorno_tienda, minutos=60)
+    confirmar_hasta(
+        entorno_tienda, SUCURSAL, CAJA, venta.evento.consecutivo, ahora=BASE + timedelta(hours=1)
+    )
+
+    with pytest.raises(RelojAtrasadoError):
+        registrar_recepcion_proveedor(
+            entorno_tienda,
+            sucursal_id=SUCURSAL,
+            caja_id=CAJA,
+            usuario_id="cajero-1",
+            proveedor_id="PROV01",
+            folio_documento="FAC-1",
+            partidas=[LineaRecepcion(sku="coca-600", cantidad=1, costo_unitario_centavos=1100)],
+            ahora=BASE + timedelta(minutes=30),
+        )

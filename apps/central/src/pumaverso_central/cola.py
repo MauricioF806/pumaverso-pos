@@ -7,6 +7,7 @@ from typing import Any
 import psycopg
 from psycopg.types.json import Jsonb
 from pumaverso_contratos import (
+    VERSION_ESQUEMA_ACTUAL,
     ContenidoAjuste,
     ContenidoCancelacion,
     ContenidoMerma,
@@ -15,11 +16,26 @@ from pumaverso_contratos import (
     ContenidoVenta,
     EventoContrato,
     TipoEvento,
+    validar_contenido_por_tipo,
 )
+
+LONGITUD_MAXIMA_ERROR = 500
 
 
 class ConflictoHashEventoError(ValueError):
     """Llegó un consecutivo ya registrado pero con distinto hash de contenido."""
+
+
+class EventoInvalidoError(ValueError):
+    """El evento no cumple el contrato: contenido, versión o hash incorrectos."""
+
+
+@dataclass(frozen=True, slots=True)
+class ResultadoProcesamiento:
+    """Cuántos eventos de la cola se aplicaron y cuántos se apartaron por error."""
+
+    procesados: int
+    fallidos: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,7 +53,14 @@ def recibir_lote_eventos(
     caja_id: str,
     eventos: list[EventoContrato],
 ) -> ResultadoIngesta:
-    """Guarda eventos recibidos de forma idempotente y los encola en PostgreSQL."""
+    """Guarda eventos recibidos de forma idempotente y los encola en PostgreSQL.
+
+    Antes de guardar nada valida cada evento contra el contrato y recalcula su
+    hash. Si uno solo es inválido, se rechaza el lote completo.
+    """
+    for evento in eventos:
+        validar_evento_recibido(evento)
+
     with conn.transaction():
         conn.execute(
             """
@@ -155,14 +178,44 @@ def recibir_lote_eventos(
         )
 
 
-def procesar_eventos_pendientes_cola(conn: psycopg.Connection, *, limite: int = 50) -> int:
-    """Toma eventos sin procesar usando FOR UPDATE SKIP LOCKED y los aplica."""
+def validar_evento_recibido(evento: EventoContrato) -> None:
+    """Comprueba que el evento cumple el contrato y que su hash corresponde a sus datos."""
+    if evento.version_esquema != VERSION_ESQUEMA_ACTUAL:
+        raise EventoInvalidoError(
+            f"Versión de esquema {evento.version_esquema} no soportada en "
+            f"{evento.sucursal_id}/{evento.caja_id}#{evento.consecutivo}."
+        )
+    try:
+        validar_contenido_por_tipo(evento.tipo, evento.contenido)
+    except ValueError as error:
+        raise EventoInvalidoError(
+            f"Contenido inválido para '{evento.tipo}' en "
+            f"{evento.sucursal_id}/{evento.caja_id}#{evento.consecutivo}: {error}"
+        ) from error
+    if evento.hash_esperado() != evento.hash:
+        raise EventoInvalidoError(
+            f"El hash no corresponde a los datos en "
+            f"{evento.sucursal_id}/{evento.caja_id}#{evento.consecutivo}."
+        )
+
+
+def procesar_eventos_pendientes_cola(
+    conn: psycopg.Connection, *, limite: int = 50
+) -> ResultadoProcesamiento:
+    """Toma eventos sin procesar usando FOR UPDATE SKIP LOCKED y los aplica.
+
+    Cada evento se aplica en su propio savepoint: si uno falla, se deshacen
+    solo sus cambios, se marca como fallido con el error y la cola sigue con
+    los demás. Los fallidos se revisan con ``eventos_fallidos()``.
+    """
+    procesados = 0
+    fallidos = 0
     with conn.transaction():
         filas = conn.execute(
             """
             SELECT id, sucursal_id, caja_id, consecutivo, tipo, contenido, usuario_id
             FROM sincronizacion.cola_eventos
-            WHERE procesado_en IS NULL
+            WHERE procesado_en IS NULL AND fallido_en IS NULL
             ORDER BY id
             LIMIT %s
             FOR UPDATE SKIP LOCKED
@@ -171,13 +224,44 @@ def procesar_eventos_pendientes_cola(conn: psycopg.Connection, *, limite: int = 
         ).fetchall()
 
         for fila in filas:
-            _aplicar_evento_en_central(conn, fila)
-            conn.execute(
-                "UPDATE sincronizacion.cola_eventos SET procesado_en = %s WHERE id = %s",
-                (datetime.now(UTC), fila["id"]),
-            )
+            try:
+                with conn.transaction():  # savepoint por evento
+                    _aplicar_evento_en_central(conn, fila)
+                    conn.execute(
+                        "UPDATE sincronizacion.cola_eventos SET procesado_en = %s WHERE id = %s",
+                        (datetime.now(UTC), fila["id"]),
+                    )
+                procesados += 1
+            except Exception as error:  # noqa: BLE001 - se registra y la cola continúa
+                conn.execute(
+                    """
+                    UPDATE sincronizacion.cola_eventos
+                    SET fallido_en = %s, error = %s
+                    WHERE id = %s
+                    """,
+                    (
+                        datetime.now(UTC),
+                        f"{type(error).__name__}: {error}"[:LONGITUD_MAXIMA_ERROR],
+                        fila["id"],
+                    ),
+                )
+                fallidos += 1
 
-        return len(filas)
+    return ResultadoProcesamiento(procesados=procesados, fallidos=fallidos)
+
+
+def eventos_fallidos(conn: psycopg.Connection, *, limite: int = 100) -> list[dict[str, Any]]:
+    """Eventos apartados por error al procesarse, del más antiguo al más reciente."""
+    return conn.execute(
+        """
+        SELECT sucursal_id, caja_id, consecutivo, tipo, fallido_en, error
+        FROM sincronizacion.cola_eventos
+        WHERE fallido_en IS NOT NULL
+        ORDER BY id
+        LIMIT %s
+        """,
+        (limite,),
+    ).fetchall()
 
 
 def _aplicar_evento_en_central(conn: psycopg.Connection, fila: dict[str, Any]) -> None:
