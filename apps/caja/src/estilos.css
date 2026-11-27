@@ -1,0 +1,743 @@
+/*
+  Pantalla de caja de Pumaverso.
+  Lexend: diseñada para leerse rápido; ceros normales en los importes.
+  Un mostrador gris azulado bajo luz fluorescente; el único elemento con
+  personalidad es el ticket térmico. Todo lo demás queda sobrio para que el
+  cajero lea rápido con fila enfrente.
+*/
+
+:root {
+  --mostrador: #e4eaee;
+  --mostrador-linea: #c9d3da;
+  --tinta: #1b2532;
+  --tinta-suave: #4b5868;
+  --papel: #ffffff;
+  --billete: #0e7a5c;
+  --billete-oscuro: #0a5f48;
+  --ambar: #8a4d05;
+  --ambar-fondo: #fbeed6;
+  --rojo: #b42318;
+  --rojo-fondo: #fde7e4;
+  --verde-fondo: #dff1e9;
+  --foco: #1d5fd6;
+
+  --letra: "Lexend", system-ui, sans-serif;
+  --letra-ticket: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Escala 1.25: 14 · 16 · 20 · 25 · 39 px */
+  --t-chica: 0.875rem;
+  --t-base: 1rem;
+  --t-media: 1.25rem;
+  --t-grande: 1.5625rem;
+  --t-total: 2.441rem;
+
+  --radio: 6px;
+  color-scheme: light;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  font-size: 106.25%; /* 17 px: un poco más grande para leer de pie, a un brazo de distancia */
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--mostrador);
+  color: var(--tinta);
+  font-family: var(--letra);
+  font-size: var(--t-base);
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1,
+h2,
+p {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+  color: inherit;
+}
+
+:focus-visible {
+  outline: 3px solid var(--foco);
+  outline-offset: 2px;
+}
+
+.solo-lectores {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.cargando {
+  padding: 3rem;
+  color: var(--tinta-suave);
+}
+
+/* ---------- Campos y botones ---------- */
+
+.campo {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.campo__nombre {
+  font-size: var(--t-chica);
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+
+.campo__entrada {
+  width: 100%;
+  min-height: 3rem;
+  padding: 0.6rem 0.85rem;
+  border: 2px solid var(--mostrador-linea);
+  border-radius: var(--radio);
+  background: var(--papel);
+}
+
+.campo__entrada:hover {
+  border-color: #aab7c1;
+}
+
+.campo__entrada:focus-visible {
+  outline: none;
+  border-color: var(--foco);
+  box-shadow: 0 0 0 3px rgb(29 95 214 / 0.2);
+}
+
+.campo__entrada--escaner {
+  min-height: 3.75rem;
+  font-size: var(--t-media);
+}
+
+.campo__entrada--pin {
+  letter-spacing: 0.3em;
+}
+
+.campo__entrada:disabled {
+  background: transparent;
+  color: var(--tinta-suave);
+}
+
+.campo--en-linea {
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  min-height: 2.75rem;
+  padding: 0.55rem 1.1rem;
+  border: 2px solid transparent;
+  border-radius: var(--radio);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.boton:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.boton--principal {
+  background: var(--tinta);
+  color: var(--papel);
+}
+
+.boton--principal:hover:not(:disabled) {
+  background: #2c3a4c;
+}
+
+.boton--secundario {
+  background: var(--papel);
+  border-color: var(--mostrador-linea);
+}
+
+.boton--secundario:hover:not(:disabled) {
+  border-color: var(--tinta-suave);
+}
+
+.boton--discreto {
+  min-height: 2.25rem;
+  padding: 0.3rem 0.7rem;
+  background: transparent;
+  border-color: currentColor;
+  font-weight: 400;
+}
+
+.boton--peligro {
+  background: var(--rojo);
+  color: var(--papel);
+}
+
+.boton--peligro:hover:not(:disabled) {
+  background: #951c13;
+}
+
+.boton--cobrar {
+  width: 100%;
+  min-height: 4.25rem;
+  justify-content: space-between;
+  padding-inline: 1.4rem;
+  background: var(--billete);
+  color: var(--papel);
+  font-size: var(--t-grande);
+}
+
+.boton--cobrar:hover:not(:disabled) {
+  background: var(--billete-oscuro);
+}
+
+.boton__tecla {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid rgb(255 255 255 / 0.55);
+  border-radius: 4px;
+  font-family: var(--letra);
+  font-size: var(--t-chica);
+  font-weight: 400;
+}
+
+/* ---------- Mensajes ---------- */
+
+.mensaje {
+  padding: 0.7rem 0.9rem;
+  border-left: 4px solid currentColor;
+  border-radius: 0 var(--radio) var(--radio) 0;
+}
+
+.mensaje--error {
+  background: var(--rojo-fondo);
+  color: var(--rojo);
+}
+
+.mensaje--aviso {
+  background: var(--ambar-fondo);
+  color: var(--ambar);
+}
+
+.mensaje--exito {
+  background: var(--verde-fondo);
+  color: var(--billete-oscuro);
+}
+
+/* ---------- Inicio de sesión ---------- */
+
+.inicio {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 1.5rem;
+}
+
+.inicio__tarjeta {
+  display: grid;
+  gap: 1.1rem;
+  width: min(100%, 24rem);
+  padding: 2rem;
+  background: var(--papel);
+  border-radius: var(--radio);
+  border-top: 6px solid var(--tinta);
+}
+
+.inicio__titulo {
+  font-size: var(--t-grande);
+  line-height: 1.2;
+}
+
+.inicio__texto,
+.inicio__caja {
+  color: var(--tinta-suave);
+}
+
+.inicio__caja {
+  font-size: var(--t-chica);
+}
+
+/* ---------- Estructura de la caja ---------- */
+
+.caja {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-height: 100vh;
+}
+
+.barra {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1.5rem;
+  padding: 0.6rem 1.5rem;
+  background: var(--tinta);
+  color: var(--papel);
+}
+
+.barra__marca {
+  display: grid;
+  line-height: 1.15;
+  font-weight: 600;
+  font-size: var(--t-media);
+}
+
+.barra__caja {
+  font-size: var(--t-chica);
+  font-weight: 400;
+  color: #c8d2dc;
+}
+
+.barra__vistas {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.pestana {
+  padding: 0.45rem 0.9rem;
+  border: 0;
+  border-radius: var(--radio);
+  background: transparent;
+  color: #c8d2dc;
+  cursor: pointer;
+}
+
+.pestana:hover {
+  color: var(--papel);
+}
+
+.pestana[aria-current="page"] {
+  background: var(--papel);
+  color: var(--tinta);
+  font-weight: 600;
+}
+
+.barra__usuario {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-left: auto;
+}
+
+.conexion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.1rem 0.5rem;
+  padding: 0.3rem 0.8rem;
+  border-radius: 999px;
+  font-size: var(--t-chica);
+}
+
+.conexion__punto {
+  width: 0.65rem;
+  height: 0.65rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.conexion__titulo {
+  font-weight: 600;
+}
+
+.conexion--bien {
+  background: #1f3a33;
+  color: #7fe0bd;
+}
+
+.conexion--espera {
+  background: #4a3410;
+  color: #ffd48a;
+}
+
+.conexion--problema {
+  background: #4d1d19;
+  color: #ffb4ab;
+}
+
+.contenido {
+  padding: 1.75rem 1.5rem 3rem;
+}
+
+/* ---------- Cobro ---------- */
+
+.cobro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(21rem, 26rem);
+  gap: 2rem;
+  align-items: start;
+  max-width: 78rem;
+  margin: 0 auto;
+}
+
+.captura {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.resultados {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.resultados__vacio {
+  color: var(--tinta-suave);
+}
+
+.resultado {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: 2px solid transparent;
+  border-radius: var(--radio);
+  background: var(--papel);
+  text-align: left;
+  cursor: pointer;
+}
+
+.resultado:hover:not(:disabled) {
+  border-color: var(--tinta);
+}
+
+.resultado:disabled {
+  cursor: not-allowed;
+  background: transparent;
+  border-color: var(--mostrador-linea);
+}
+
+.resultado__nombre {
+  font-weight: 600;
+}
+
+.resultado__precio {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.resultado__extra {
+  grid-column: 1 / -1;
+  font-size: var(--t-chica);
+  color: var(--tinta-suave);
+}
+
+.cobrada {
+  display: grid;
+  gap: 0.25rem;
+  padding: 1rem 1.1rem;
+  border-radius: var(--radio);
+  background: var(--verde-fondo);
+  color: var(--billete-oscuro);
+  font-size: var(--t-media);
+}
+
+.cobrada__cambio {
+  font-size: var(--t-total);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+/* ---------- El ticket ---------- */
+
+.mostrador {
+  display: grid;
+  gap: 1.25rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.ticket {
+  position: relative;
+  margin-bottom: 0.75rem;
+  padding: 1.25rem 1.25rem 1rem;
+  background: var(--papel);
+  font-family: var(--letra-ticket);
+  font-size: 0.95rem;
+  box-shadow: 0 1px 0 var(--mostrador-linea);
+}
+
+/* Borde dentado del papel térmico recién cortado. */
+.ticket::after {
+  content: "";
+  position: absolute;
+  inset: auto 0 -0.75rem;
+  height: 0.75rem;
+  background:
+    linear-gradient(135deg, var(--papel) 50%, transparent 50%) 0 0 / 1rem 0.75rem repeat-x,
+    linear-gradient(225deg, var(--papel) 50%, transparent 50%) 0 0 / 1rem 0.75rem repeat-x;
+}
+
+.ticket__vacio {
+  padding: 2rem 0;
+  font-family: var(--letra);
+  color: var(--tinta-suave);
+  text-align: center;
+}
+
+.ticket__lineas {
+  display: grid;
+  max-height: 50vh;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.ticket__linea {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.15rem 1rem;
+  padding: 0.6rem 0;
+  border-bottom: 1px dashed var(--mostrador-linea);
+}
+
+.ticket__linea--nueva {
+  animation: imprimir 220ms ease-out;
+}
+
+@keyframes imprimir {
+  from {
+    opacity: 0;
+    transform: translateY(-0.4rem);
+  }
+}
+
+.ticket__nombre {
+  font-weight: 600;
+}
+
+.ticket__importe {
+  font-weight: 600;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket__cantidad {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--tinta-suave);
+}
+
+.ticket__ajuste {
+  width: 2rem;
+  height: 2rem;
+  border: 1px solid var(--mostrador-linea);
+  border-radius: 4px;
+  background: var(--papel);
+  cursor: pointer;
+}
+
+.ticket__ajuste:hover {
+  border-color: var(--tinta);
+}
+
+.ticket__quitar {
+  justify-self: end;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--tinta-suave);
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.ticket__quitar:hover {
+  color: var(--rojo);
+}
+
+.ticket__total {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 1rem;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: 1rem;
+  padding-top: 0.9rem;
+  border-top: 2px solid var(--tinta);
+  font-weight: 600;
+}
+
+.ticket__total strong {
+  font-size: var(--t-total);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.ticket__piezas {
+  font-weight: 400;
+  color: var(--tinta-suave);
+}
+
+.pago {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.pago__cambio {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--t-media);
+}
+
+/* ---------- Ventas del turno ---------- */
+
+.ventas {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 62rem;
+  margin: 0 auto;
+}
+
+.ventas__encabezado {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.ventas__titulo {
+  font-size: var(--t-grande);
+  line-height: 1.2;
+}
+
+.ventas__vacio {
+  color: var(--tinta-suave);
+}
+
+.tabla {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--papel);
+  border-radius: var(--radio);
+  overflow: hidden;
+}
+
+.tabla th,
+.tabla td {
+  padding: 0.75rem 1rem;
+  text-align: left;
+  border-bottom: 1px solid var(--mostrador);
+}
+
+.tabla th {
+  font-size: var(--t-chica);
+  color: var(--tinta-suave);
+}
+
+.tabla__numero {
+  text-align: right !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.tabla__accion {
+  text-align: right !important;
+  width: 1%;
+  white-space: nowrap;
+}
+
+.tabla__fila--cancelada td:nth-child(3),
+.tabla__fila--cancelada td:nth-child(4) {
+  color: var(--tinta-suave);
+  text-decoration: line-through;
+}
+
+.etiqueta {
+  font-size: var(--t-chica);
+  font-weight: 600;
+  color: var(--rojo);
+}
+
+/* ---------- Diálogo ---------- */
+
+.velo {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgb(27 37 50 / 0.55);
+}
+
+.dialogo {
+  display: grid;
+  gap: 1rem;
+  width: min(100%, 32rem);
+  padding: 1.75rem;
+  background: var(--papel);
+  border-radius: var(--radio);
+  border-top: 6px solid var(--rojo);
+}
+
+.dialogo__titulo {
+  font-size: var(--t-grande);
+  line-height: 1.2;
+}
+
+.dialogo__texto {
+  color: var(--tinta-suave);
+}
+
+.dialogo__fila {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.dialogo__acciones {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
+/* ---------- Pantallas angostas ---------- */
+
+@media (max-width: 52rem) {
+  .cobro {
+    grid-template-columns: 1fr;
+  }
+
+  .mostrador {
+    position: static;
+  }
+
+  .barra__usuario {
+    margin-left: 0;
+  }
+
+  .dialogo__fila {
+    grid-template-columns: 1fr;
+  }
+
+  .ticket__total strong {
+    font-size: var(--t-grande);
+  }
+
+  .tabla th:nth-child(3),
+  .tabla td:nth-child(3) {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticket__linea--nueva {
+    animation: none;
+  }
+}
