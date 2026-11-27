@@ -4,6 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from pumaverso_tienda.api.dependencias import obtener_transporte_central
 from pumaverso_tienda.api.routes import api_router
@@ -59,6 +60,15 @@ app = FastAPI(
     description="API del monolito local de cada sucursal.",
     version=settings.app_version,
     lifespan=lifespan,
+)
+
+# La pantalla de caja corre en el navegador, en otro puerto: sin esto el
+# navegador bloquea sus llamadas. Solo se permiten los orígenes configurados.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=settings.cors_origenes,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 app.include_router(api_router)

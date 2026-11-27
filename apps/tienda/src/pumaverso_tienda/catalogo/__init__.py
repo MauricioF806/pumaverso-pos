@@ -8,8 +8,10 @@ from pumaverso_tienda.catalogo.servicio import (
     ProductoInactivoError,
     ProductoNoEncontradoError,
     ResultadoValidacionProducto,
+    buscar_productos,
     guardar_producto,
     obtener_producto,
+    precio_vigente,
     validar_producto_para_venta,
 )
 
@@ -21,7 +23,9 @@ __all__ = [
     "ProductoInactivoError",
     "ProductoNoEncontradoError",
     "ResultadoValidacionProducto",
+    "buscar_productos",
     "guardar_producto",
     "obtener_producto",
+    "precio_vigente",
     "validar_producto_para_venta",
 ]

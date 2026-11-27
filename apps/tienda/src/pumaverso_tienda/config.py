@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     # Tope de espera entre reintentos cuando central no responde.
     sync_espera_maxima_segundos: float = Field(default=300.0, gt=0)
 
+    # Orígenes del navegador que pueden llamar a esta API (pantalla de caja,
+    # decisión 0008). En .env se escribe como lista JSON.
+    cors_origenes: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

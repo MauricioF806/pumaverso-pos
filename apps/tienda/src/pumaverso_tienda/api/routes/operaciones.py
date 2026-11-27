@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from datetime import datetime
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from pumaverso_contratos import PATRON_IDENTIFICADOR, LineaRecepcion
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,8 @@ from pumaverso_tienda.catalogo import (
     PrecioExpiradoError,
     ProductoInactivoError,
     ProductoNoEncontradoError,
+    buscar_productos,
+    precio_vigente,
     validar_producto_para_venta,
 )
 from pumaverso_tienda.config import get_settings
@@ -37,7 +39,10 @@ from pumaverso_tienda.pos import (
     ItemVentaSolicitado,
     RelojAtrasadoError,
     VentaNoCancelableError,
+    VentaRegistrada,
     cancelar_venta,
+    listar_ventas_recientes,
+    obtener_venta,
     registrar_venta,
 )
 from pumaverso_tienda.usuarios import (
@@ -67,6 +72,40 @@ class RespuestaLogin(BaseModel):
     usuario_id: str
     nombre: str
     rol: str
+
+
+class RespuestaUsuario(BaseModel):
+    usuario_id: str
+    nombre: str
+    rol: str
+
+
+class ProductoListado(BaseModel):
+    sku: str
+    nombre: str
+    precio_centavos: int
+    existencia: int
+    precio_vigente: bool
+
+
+class PartidaVentaHttp(BaseModel):
+    sku: str
+    nombre: str | None
+    cantidad: int
+    precio_unitario_centavos: int
+    subtotal_centavos: int
+
+
+class VentaHttp(BaseModel):
+    consecutivo: int
+    registrado_en: datetime
+    usuario_id: str
+    total_centavos: int
+    inventario_negativo: bool
+    cancelada: bool
+    consecutivo_cancelacion: int | None
+    hash: str
+    partidas: list[PartidaVentaHttp]
 
 
 class RespuestaProducto(BaseModel):
@@ -165,6 +204,24 @@ def _verificar_pin_aprobador(conexion: sqlite3.Connection, aprobacion: Aprobacio
     return aprobacion.aprobador_id
 
 
+def _venta_http(venta: VentaRegistrada) -> VentaHttp:
+    return VentaHttp(
+        consecutivo=venta.consecutivo,
+        registrado_en=venta.registrado_en,
+        usuario_id=venta.usuario_id,
+        total_centavos=venta.total_centavos,
+        inventario_negativo=venta.inventario_negativo,
+        cancelada=venta.cancelada,
+        consecutivo_cancelacion=venta.consecutivo_cancelacion,
+        hash=venta.hash,
+        partidas=[PartidaVentaHttp(**_campos_partida(p)) for p in venta.partidas],
+    )
+
+
+def _campos_partida(partida) -> dict[str, object]:
+    return {campo: getattr(partida, campo) for campo in PartidaVentaHttp.model_fields}
+
+
 def _evento_creado(evento) -> RespuestaEventoCreado:
     return RespuestaEventoCreado(
         sucursal_id=evento.sucursal_id,
@@ -194,6 +251,31 @@ def logout_local(conexion: ConexionDep, token: Annotated[str, Depends(obtener_to
     """Cierra la sesión del token enviado."""
     cerrar_sesion(conexion, token)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.get("/auth/yo", response_model=RespuestaUsuario)
+def usuario_de_la_sesion(usuario: UsuarioActualDep) -> RespuestaUsuario:
+    """Quién tiene la sesión abierta; sirve para reanudarla al recargar la pantalla."""
+    return RespuestaUsuario(usuario_id=usuario.usuario_id, nombre=usuario.nombre, rol=usuario.rol)
+
+
+@router.get("/catalogo", response_model=list[ProductoListado])
+def listar_catalogo(
+    conexion: ConexionDep,
+    buscar: Annotated[str, Query(max_length=64, description="Texto en el nombre o SKU")] = "",
+    limite: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[ProductoListado]:
+    """Busca productos activos por nombre o SKU, para cuando no hay código de barras."""
+    return [
+        ProductoListado(
+            sku=producto.sku,
+            nombre=producto.nombre,
+            precio_centavos=producto.precio_centavos,
+            existencia=obtener_existencia(conexion, producto.sku),
+            precio_vigente=precio_vigente(producto),
+        )
+        for producto in buscar_productos(conexion, buscar, limite=limite)
+    ]
 
 
 @router.get("/catalogo/{sku}", response_model=RespuestaProducto)
@@ -236,6 +318,32 @@ def crear_venta(
         alerta_inventario_negativo=resultado.alerta_inventario_negativo,
         skus_costo_por_revisar=list(resultado.skus_costo_por_revisar),
     )
+
+
+@router.get("/pos/ventas", response_model=list[VentaHttp])
+def listar_ventas(
+    conexion: ConexionDep,
+    _usuario: UsuarioActualDep,
+    limite: Annotated[int, Query(ge=1, le=100)] = 20,
+) -> list[VentaHttp]:
+    """Últimas ventas de la caja, con su estado de cancelación."""
+    settings = get_settings()
+    ventas = listar_ventas_recientes(
+        conexion, settings.sucursal_id, settings.caja_id, limite=limite
+    )
+    return [_venta_http(v) for v in ventas]
+
+
+@router.get("/pos/ventas/{consecutivo}", response_model=VentaHttp)
+def detalle_venta(consecutivo: int, conexion: ConexionDep, _usuario: UsuarioActualDep) -> VentaHttp:
+    """Detalle de una venta para mostrar o reimprimir el ticket."""
+    settings = get_settings()
+    venta = obtener_venta(conexion, settings.sucursal_id, settings.caja_id, consecutivo)
+    if venta is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, detail=f"No existe una venta con consecutivo {consecutivo}."
+        )
+    return _venta_http(venta)
 
 
 @router.post(

@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.4
+**Versión del documento:** 1.5
 
 ---
 
@@ -135,7 +135,7 @@ Tecnologías:
 - SQLite.
 - TypeScript.
 - React.
-- Tauri.
+- Vite (la pantalla se abre en el navegador; Tauri queda como opcional, ver decisión 0008).
 - PyInstaller para empaquetar el servicio local.
 
 ### 4.2. Módulos del monolito local
@@ -401,6 +401,8 @@ Hasta la elaboración de este documento:
 
 - La tienda sincroniza y central procesa su cola automáticamente, con reintentos y espera creciente (decisión 0007).
 
+- La API de la tienda está lista para la pantalla de caja: CORS, búsqueda de productos, ventas recientes y script de datos de demostración (decisión 0008).
+
 Pendiente: credenciales en la API de central, pantalla de caja y detección de inventario fantasma.
 
-**Próximo objetivo:** pantalla de caja (TypeScript + React + Tauri) sobre la API local, usando sesiones con token (decisión 0006).
+**Próximo objetivo:** pantalla de caja en `apps/caja/` (TypeScript + React + Vite) sobre la API local, usando sesiones con token (decisión 0006).
