@@ -124,9 +124,7 @@ def validar_producto_para_venta(
     referencia = _asegurar_zona_horaria(ahora)
     fecha_precio = datetime.fromisoformat(producto.precio_actualizado_en)
     if referencia - fecha_precio > TTL_PRECIO:
-        raise PrecioExpiradoError(
-            f"El precio del SKU '{sku}' superó el TTL de 72 horas."
-        )
+        raise PrecioExpiradoError(f"El precio del SKU '{sku}' superó el TTL de 72 horas.")
 
     fecha_costo = datetime.fromisoformat(producto.costo_actualizado_en)
     requiere_revision = (referencia - fecha_costo) > TTL_COSTO
@@ -134,6 +132,57 @@ def validar_producto_para_venta(
         producto=producto,
         costo_requiere_revision=requiere_revision,
     )
+
+
+def buscar_productos(
+    conexion: sqlite3.Connection,
+    texto: str = "",
+    *,
+    limite: int = 20,
+    incluir_inactivos: bool = False,
+) -> list[ProductoCatalogo]:
+    """Busca productos cuyo nombre o SKU contengan ``texto`` (sin distinguir mayúsculas).
+
+    Con ``texto`` vacío devuelve los primeros productos en orden alfabético.
+    """
+    if limite < 1:
+        raise ValueError("limite debe ser mayor que cero")
+    patron = "%" + _escapar_like(texto.strip()) + "%"
+    filas = conexion.execute(
+        """
+        SELECT sku, nombre, precio_centavos, precio_actualizado_en,
+               costo_centavos, costo_actualizado_en, activo
+        FROM productos_catalogo
+        -- LIKE ya ignora mayúsculas en letras sin acento.
+        WHERE (nombre LIKE ? ESCAPE '\\' OR sku LIKE ? ESCAPE '\\')
+          AND (? OR activo = 1)
+        ORDER BY nombre COLLATE NOCASE, sku
+        LIMIT ?
+        """,
+        (patron, patron, int(incluir_inactivos), limite),
+    ).fetchall()
+    return [
+        ProductoCatalogo(
+            sku=fila["sku"],
+            nombre=fila["nombre"],
+            precio_centavos=fila["precio_centavos"],
+            precio_actualizado_en=fila["precio_actualizado_en"],
+            costo_centavos=fila["costo_centavos"],
+            costo_actualizado_en=fila["costo_actualizado_en"],
+            activo=bool(fila["activo"]),
+        )
+        for fila in filas
+    ]
+
+
+def precio_vigente(producto: ProductoCatalogo, *, ahora: datetime | None = None) -> bool:
+    """Indica si el precio sigue dentro de su vigencia de 72 horas."""
+    referencia = _asegurar_zona_horaria(ahora)
+    return referencia - datetime.fromisoformat(producto.precio_actualizado_en) <= TTL_PRECIO
+
+
+def _escapar_like(texto: str) -> str:
+    return texto.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _upsert_producto(

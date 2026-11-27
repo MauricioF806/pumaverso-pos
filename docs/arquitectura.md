@@ -9,7 +9,7 @@ Cada sucursal ejecuta un **monolito local** que registra todo primero en su prop
 ```mermaid
 flowchart LR
     subgraph Sucursal["Sucursal (una caja en V1)"]
-        Caja["Pantalla de caja<br/>TypeScript + React + Tauri"] --> Nodo["Monolito local<br/>Python + FastAPI"]
+        Caja["Pantalla de caja<br/>React + Vite (navegador)"] --> Nodo["Monolito local<br/>Python + FastAPI"]
         Nodo --> SQLite[("SQLite<br/>registro de eventos")]
     end
 
@@ -30,7 +30,7 @@ flowchart LR
 | Componente | Ubicación en el repositorio | Tecnología |
 |---|---|---|
 | Monolito de la sucursal | `apps/tienda/` | Python 3.13, FastAPI, SQLite |
-| Pantalla de caja | Por definir | TypeScript, React, Tauri |
+| Pantalla de caja | `apps/caja/` (planeada) | TypeScript, React, Vite; Tauri opcional |
 | Servicios centrales | `apps/central/` | Python, FastAPI, PostgreSQL |
 | Contrato de eventos | `packages/contratos/` | Python, Pydantic |
 
@@ -54,3 +54,4 @@ Cada decisión vive en su propio archivo dentro de [`decisiones/`](decisiones/).
 | [0005](decisiones/0005-registro-de-eventos-inmutable.md) | Registro de eventos inmutable y estado de sincronización aparte | Aceptada |
 | [0006](decisiones/0006-vigencia-sesiones-y-validacion-en-central.md) | Vigencia desde la recepción, sesiones con PIN y validación en central | Aceptada |
 | [0007](decisiones/0007-sincronizacion-automatica.md) | Sincronización y cola automáticas dentro de cada aplicación | Aceptada |
+| [0008](decisiones/0008-pantalla-de-caja-web.md) | Pantalla de caja como aplicación web; Tauri opcional | Aceptada |

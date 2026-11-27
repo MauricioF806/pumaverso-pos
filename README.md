@@ -11,7 +11,7 @@ Pumaverso POS permite que cada sucursal opere de manera autónoma mediante un mo
 
 - **Nodo local:** Python y FastAPI.
 - **Base de datos local:** SQLite.
-- **Interfaz de usuario:** TypeScript, React y Tauri.
+- **Pantalla de caja:** aplicación web con TypeScript, React y Vite (Tauri opcional, decisión 0008).
 - **Servidor central:** Microservicios con Python y FastAPI.
 - **Base de datos central:** PostgreSQL.
 - **Comunicación asíncrona:** cola de eventos en PostgreSQL.
@@ -85,6 +85,16 @@ La tienda sincroniza sola con central cada 60 segundos y reintenta con espera cr
 
 Los intervalos se cambian en `.env`. Para una demo conviene bajarlos, por ejemplo `SYNC_INTERVALO_SEGUNDOS=5`.
 
+### Datos de demostración
+
+Con central y la tienda levantados, este comando carga 3 usuarios y 12 productos en central, sincroniza la tienda y deja 24 piezas de cada producto:
+
+```bash
+python scripts/cargar_datos_demo.py
+```
+
+Al terminar muestra los usuarios y sus PIN (`cajero1` / `1234`, `gerente1` / `9999`…). Se puede correr varias veces sin duplicar datos. Con `--help` se ven las opciones.
+
 ### Uso de la API de la tienda
 
 Las operaciones requieren una sesión (decisión 0006):
@@ -93,11 +103,14 @@ Las operaciones requieren una sesión (decisión 0006):
 2. Cada operación lleva el encabezado `Authorization: Bearer <token>` y queda a nombre de ese usuario.
 3. Cancelaciones y ajustes piden además `aprobador_id` y `aprobador_pin` de un gerente o supervisor distinto de quien opera.
 
+Consultas pensadas para la pantalla de caja (decisión 0008): `GET /auth/yo`, `GET /catalogo?buscar=`, `GET /pos/ventas` y `GET /pos/ventas/{consecutivo}`. La API acepta llamadas del navegador solo desde los orígenes de `CORS_ORIGENES` (por defecto, Vite en `http://localhost:5173`).
+
 ### Pruebas
 
 ```bash
 python -m pytest
 python -m ruff check apps packages
+python -m ruff check scripts --line-length 100
 ```
 
 Las pruebas de central necesitan PostgreSQL (`docker compose up -d`). Usan su propia base, `pumaverso_central_test`, que se crea sola; nunca tocan la de desarrollo. Si PostgreSQL no está disponible, esas pruebas se saltan con un aviso.

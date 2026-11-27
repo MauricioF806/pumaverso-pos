@@ -2,6 +2,7 @@ import time
 from datetime import UTC, datetime
 
 import psycopg
+import pytest
 from fastapi.testclient import TestClient
 from psycopg.types.json import Jsonb
 from pumaverso_contratos import (
@@ -349,3 +350,25 @@ def test_la_app_procesa_la_cola_sola(conn_central, monkeypatch):
         assert estado["fallos_consecutivos"] == 0
     finally:
         get_central_settings.cache_clear()
+
+
+# --- Script de datos de demostración -------------------------------------------
+
+
+def test_el_script_de_demo_carga_usuarios_y_productos_en_central(conn_central):
+    pytest.importorskip("pumaverso_tienda", reason="El script usa el hash de PIN de la tienda.")
+    import importlib.util
+    from pathlib import Path
+
+    ruta = Path(__file__).resolve().parents[3] / "scripts" / "cargar_datos_demo.py"
+    especificacion = importlib.util.spec_from_file_location("cargar_datos_demo", ruta)
+    demo = importlib.util.module_from_spec(especificacion)
+    especificacion.loader.exec_module(demo)
+
+    cliente = TestClient(app)
+    demo.cargar_central(cliente)
+    demo.cargar_central(cliente)  # correrlo dos veces no duplica
+
+    usuarios = conn_central.execute("SELECT COUNT(*) AS n FROM usuarios.usuarios").fetchone()["n"]
+    productos = conn_central.execute("SELECT COUNT(*) AS n FROM catalogo.productos").fetchone()["n"]
+    assert (usuarios, productos) == (len(demo.USUARIOS), len(demo.PRODUCTOS))
