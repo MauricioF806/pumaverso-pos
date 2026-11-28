@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.7
+**Versión del documento:** 1.8
 
 ---
 
@@ -370,7 +370,6 @@ Los siguientes puntos todavía requieren una decisión explícita del equipo:
 - Confirmar qué sucursales participan en el piloto. Deben operar con una sola caja (ver decisión 0004).
 - Establecer cuánto tiempo puede transcurrir antes de escalar un conteo físico pendiente.
 - Definir la fuente y el periodo de referencia para el historial de ventas.
-- Agregar credenciales a la API de central: hoy cualquiera que llegue a ella puede crear usuarios, cambiar precios o enviar eventos (ver decisión 0006).
 - Documentar como decisión el uso de un solo tipo de evento `traspaso` con campo `direccion` (salida o entrada).
 - Precisar el procedimiento para resolver ventas cuyo cobro no pudo confirmarse tras un apagón.
 
@@ -410,6 +409,8 @@ Hasta la elaboración de este documento:
 
 - Hay pruebas de punta a punta de las fallas de la demo: vender sin central, reconexión y respuesta perdida.
 
-Pendiente: pantallas del gerente (recepciones, mermas, ajustes y reporte de inventario fantasma) y credenciales en la API de central.
+- La API de central pide llaves: una por sucursal para sincronizar y una de administración (decisión 0010).
 
-**Próximo objetivo:** credenciales en la API de central y pantallas del gerente.
+Pendiente: pantallas del gerente (recepciones, mermas, ajustes y reporte de inventario fantasma).
+
+**Próximo objetivo:** pantallas del gerente.

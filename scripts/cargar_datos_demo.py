@@ -11,6 +11,11 @@ Opciones:
     --existencias N    Deja N piezas de cada producto en la tienda (por defecto 24; 0 = no tocar)
     --sin-tienda       Solo carga central; la tienda recibirá los datos en su próxima sincronización
 
+Llaves (decisión 0010): lee del ``.env`` la llave de administración
+(``CENTRAL_LLAVE_ADMIN``) para hablar con central, y registra en central la llave
+de la sucursal (``LLAVE_CENTRAL``) para que la tienda pueda sincronizar. Por eso
+hay que correrlo desde la raíz del repo.
+
 Se puede correr varias veces: actualiza usuarios y productos, y solo agrega las
 piezas que falten para llegar a N.
 """
@@ -21,6 +26,7 @@ from dataclasses import dataclass
 
 import httpx
 from pumaverso_tienda.usuarios import generar_hash_pin
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 @dataclass(frozen=True)
@@ -67,8 +73,24 @@ class ErrorDemo(RuntimeError):
     """Algo impidió cargar los datos; el mensaje explica qué revisar."""
 
 
-def cargar_central(central: httpx.Client) -> None:
-    """Da de alta (o actualiza) los usuarios y productos de la demo en central."""
+class Llaves(BaseSettings):
+    """Lo que el script necesita del ``.env``: las mismas variables que usan las apps."""
+
+    central_llave_admin: str | None = None
+    llave_central: str | None = None
+    sucursal_id: str = "S001"
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+
+
+def cargar_central(
+    central: httpx.Client, *, sucursal_id: str = "S001", llave_sucursal: str | None = None
+) -> None:
+    """Da de alta (o actualiza) los usuarios y productos de la demo en central.
+
+    Con ``llave_sucursal``, también la registra para ``sucursal_id``. ``central``
+    debe llevar la llave de administración.
+    """
     for usuario in USUARIOS:
         _verificar(
             central.put(
@@ -96,6 +118,11 @@ def cargar_central(central: httpx.Client) -> None:
                 },
             ),
             f"guardar el producto {producto.sku} en central",
+        )
+    if llave_sucursal:
+        _verificar(
+            central.put(f"/sucursales/{sucursal_id}/llave", json={"llave": llave_sucursal}),
+            f"registrar la llave de la sucursal {sucursal_id} en central",
         )
 
 
@@ -161,11 +188,26 @@ def main(argumentos: list[str] | None = None) -> int:
     parser.add_argument("--existencias", type=int, default=24)
     parser.add_argument("--sin-tienda", action="store_true")
     args = parser.parse_args(argumentos)
+    llaves = Llaves()
+    encabezados = (
+        {"Authorization": f"Bearer {llaves.central_llave_admin}"}
+        if llaves.central_llave_admin
+        else {}
+    )
 
     try:
-        with httpx.Client(base_url=args.central, timeout=10) as central:
-            cargar_central(central)
+        with httpx.Client(base_url=args.central, timeout=10, headers=encabezados) as central:
+            cargar_central(
+                central, sucursal_id=llaves.sucursal_id, llave_sucursal=llaves.llave_central
+            )
         print(f"Central ({args.central}): {len(USUARIOS)} usuarios y {len(PRODUCTOS)} productos.")
+        if llaves.llave_central:
+            print(f"Llave de la sucursal {llaves.sucursal_id} registrada en central.")
+        else:
+            print(
+                "Aviso: no hay LLAVE_CENTRAL en el .env; la tienda no podrá sincronizar.",
+                file=sys.stderr,
+            )
 
         if not args.sin_tienda and args.existencias > 0:
             with httpx.Client(base_url=args.tienda, timeout=30) as tienda:
@@ -196,7 +238,13 @@ def _verificar(respuesta: httpx.Response, que: str) -> None:
             detalle = respuesta.json().get("detail", respuesta.text)
         except ValueError:
             detalle = respuesta.text
-        raise ErrorDemo(f"No se pudo {que} (HTTP {respuesta.status_code}): {detalle}")
+        pista = ""
+        if respuesta.status_code in (401, 403):
+            pista = (
+                " Revisa que CENTRAL_LLAVE_ADMIN esté en el .env y que corras el script "
+                "desde la raíz del repo."
+            )
+        raise ErrorDemo(f"No se pudo {que} (HTTP {respuesta.status_code}): {detalle}{pista}")
 
 
 if __name__ == "__main__":

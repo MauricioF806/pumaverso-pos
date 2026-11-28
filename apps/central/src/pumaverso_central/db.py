@@ -90,6 +90,13 @@ CREATE TABLE IF NOT EXISTS inventario.cola_auditoria (
     UNIQUE (sucursal_id, caja_id, consecutivo)
 );
 
+-- Llaves de las sucursales: solo su SHA-256 (decisión 0010).
+CREATE TABLE IF NOT EXISTS sincronizacion.credenciales_sucursal (
+    sucursal_id     TEXT        PRIMARY KEY,
+    huella_llave    TEXT        NOT NULL UNIQUE,
+    actualizada_en  TIMESTAMPTZ NOT NULL
+);
+
 -- Detección de inventario fantasma (decisión 0009).
 CREATE INDEX IF NOT EXISTS idx_eventos_recibidos_ventas
     ON sincronizacion.eventos_recibidos (sucursal_id, registrado_en)

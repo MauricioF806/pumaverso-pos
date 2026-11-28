@@ -64,6 +64,8 @@ Crear el archivo de configuración local a partir del ejemplo:
 cp .env.example .env
 ```
 
+Si ya tenías un `.env`, agrégale `CENTRAL_LLAVE_ADMIN` y `LLAVE_CENTRAL` desde `.env.example` (ver [Credenciales](#credenciales)).
+
 Levantar PostgreSQL y el servidor central (puerto 8001):
 
 ```bash
@@ -86,6 +88,17 @@ La tienda sincroniza sola con central cada 60 segundos y reintenta con espera cr
 
 Los intervalos se cambian en `.env`. Para una demo conviene bajarlos, por ejemplo `SYNC_INTERVALO_SEGUNDOS=5`.
 
+### Credenciales
+
+La API de central pide una llave en el encabezado `Authorization: Bearer <llave>` (decisión 0010). Solo `/health` es pública.
+
+- **Llave de administración** (`CENTRAL_LLAVE_ADMIN` en el `.env` de central): sirve para todo, incluido dar de alta usuarios, productos y llaves de sucursal.
+- **Llave de sucursal** (`LLAVE_CENTRAL` en el `.env` de la tienda): solo sirve para sincronizar esa sucursal y ver sus sospechas de inventario fantasma.
+
+En desarrollo, `scripts/cargar_datos_demo.py` registra en central la llave de `LLAVE_CENTRAL`. Para una sucursal nueva, el administrador llama `PUT /sucursales/{id}/llave` sin cuerpo; central devuelve una llave al azar una sola vez y guarda solo su SHA-256. En `/docs` de central, el botón **Authorize** permite pegar una llave para probar.
+
+Si la tienda dice que central rechazó su llave, revisa que `LLAVE_CENTRAL` sea la registrada para su `SUCURSAL_ID`. Las ventas no se pierden: se envían en cuanto la llave es correcta.
+
 ### Pantalla de caja
 
 Necesita Node.js 20 o más nuevo. Con la tienda levantada, en otra terminal:
@@ -100,7 +113,7 @@ Abre `http://localhost:5173` y entra con un usuario de la demo (por ejemplo `caj
 
 ### Datos de demostración
 
-Con central y la tienda levantados, este comando carga 3 usuarios y 12 productos en central, sincroniza la tienda y deja 24 piezas de cada producto:
+Con central y la tienda levantados, este comando (desde la raíz del repo, porque lee las llaves del `.env`) carga 3 usuarios y 12 productos en central, registra la llave de la sucursal, sincroniza la tienda y deja 24 piezas de cada producto:
 
 ```bash
 python scripts/cargar_datos_demo.py

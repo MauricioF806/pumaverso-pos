@@ -1,6 +1,7 @@
 """Detección de inventario fantasma (PRD 5.3, decisión 0009)."""
 
 import math
+import os
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -30,6 +31,8 @@ from pumaverso_central.fantasma import (
     umbral_de_sospecha,
 )
 from pumaverso_central.main import app
+
+ADMIN = {"Authorization": f"Bearer {os.environ['CENTRAL_LLAVE_ADMIN']}"}
 
 MX = ZoneInfo("America/Mexico_City")
 HOY = datetime(2026, 11, 25, tzinfo=MX)
@@ -309,7 +312,7 @@ def test_si_nadie_cuenta_a_tiempo_se_escala(con_sospecha, conn_central):
 
 
 def test_el_reporte_dice_que_contar_que_pedir_y_cuanto_se_pierde(con_sospecha):
-    reporte = TestClient(app).get("/inventario/fantasma/sospechas").json()
+    reporte = TestClient(app, headers=ADMIN).get("/inventario/fantasma/sospechas").json()
 
     assert reporte["sugerencia_pedido"] == [LECHE]
     assert reporte["venta_perdida_estimada_centavos"] == 6 * 3000
@@ -317,7 +320,7 @@ def test_el_reporte_dice_que_contar_que_pedir_y_cuanto_se_pierde(con_sospecha):
 
 
 def test_el_conteo_cierra_la_sospecha_y_dice_cuanto_ajustar(con_sospecha, conn_central):
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
     ruta = f"/inventario/fantasma/sospechas/{con_sospecha['id']}/conteo"
 
     conteo = cliente.post(ruta, json={"cantidad_contada": 0, "usuario_id": "gerente1"})
@@ -344,7 +347,7 @@ def test_la_api_permite_revisar_como_si_fuera_otra_hora(sucursal):
     sucursal.dia_normal(HOY, leche=0)
     sucursal.vender(_a_las(HOY, 16, 5), REFRESCO)
     sucursal.enviar()
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
 
     sin_zona = cliente.post(
         "/inventario/fantasma/detectar", params={"momento": "2026-11-25T16:30:00"}
@@ -374,7 +377,7 @@ def test_el_script_de_la_demo_produce_una_sola_sospecha_de_leche(conn_central):
         return modulo
 
     datos_demo, simulacion = cargar("cargar_datos_demo"), cargar("simular_fantasma")
-    central = TestClient(app)
+    central = TestClient(app, headers=ADMIN)
     datos_demo.cargar_central(central)
     ayer = datetime(2026, 11, 26, tzinfo=simulacion.ZONA)
 
@@ -405,7 +408,7 @@ def test_central_revisa_sola_al_arrancar(catalogo, conn_central, monkeypatch):
     monkeypatch.setenv("CENTRAL_FANTASMA_AUTOMATICO", "true")
     get_central_settings.cache_clear()
     try:
-        with TestClient(app):
+        with TestClient(app, headers=ADMIN):
             limite = time.monotonic() + 5
             evaluadas = 0
             while evaluadas < 6 and time.monotonic() < limite:
