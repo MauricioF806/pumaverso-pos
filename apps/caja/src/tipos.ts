@@ -75,3 +75,47 @@ export interface EstadoSincronizacion {
   sincronizacion_automatica: boolean;
   trabajador: EstadoTrabajador | null;
 }
+
+// --- Inventario (pantallas del gerente, decisión 0011) ---
+
+export interface EventoCreado {
+  sucursal_id: string;
+  caja_id: string;
+  consecutivo: number;
+  tipo: string;
+  hash: string;
+}
+
+export interface PartidaRecepcion {
+  sku: string;
+  cantidad: number;
+  costo_unitario_centavos: number;
+}
+
+export interface Sospecha {
+  id: number;
+  sku: string;
+  nombre: string;
+  estado: "pendiente_conteo" | "escalada" | "resuelta";
+  franja_inicio: string;
+  franja_fin: string;
+  unidades_esperadas: number;
+  unidades_vendidas: number;
+  venta_perdida_estimada_centavos: number;
+  detectada_en: string;
+  escalada_en: string | null;
+  existencia_local: number;
+}
+
+export interface ReporteFantasma {
+  sospechas: Sospecha[];
+  venta_perdida_estimada_centavos: number;
+}
+
+export interface ConteoRegistrado {
+  sospecha_id: number;
+  sku: string;
+  cantidad_contada: number;
+  existencia_local: number;
+  diferencia: number;
+}

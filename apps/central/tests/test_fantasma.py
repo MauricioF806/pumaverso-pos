@@ -49,9 +49,10 @@ def _a_las(dia: datetime, hora: int, minuto: int = 0) -> datetime:
 class Sucursal:
     """Arma eventos válidos de una caja, con su hash real, como los mandaría la tienda."""
 
-    def __init__(self, conn, sucursal_id: str = "S900") -> None:
+    def __init__(self, conn, sucursal_id: str = "S900", caja_id: str = "C01") -> None:
         self.conn = conn
         self.sucursal_id = sucursal_id
+        self.caja_id = caja_id
         self.consecutivo = 0
         self.ventas: dict[datetime, int] = {}
         self._lote: list[EventoContrato] = []
@@ -60,7 +61,7 @@ class Sucursal:
         self.consecutivo += 1
         datos = {
             "sucursal_id": self.sucursal_id,
-            "caja_id": "C01",
+            "caja_id": self.caja_id,
             "consecutivo": self.consecutivo,
             "tipo": tipo,
             "version_esquema": 1,
@@ -120,7 +121,7 @@ class Sucursal:
     def enviar(self) -> None:
         if self._lote:
             recibir_lote_eventos(
-                self.conn, sucursal_id=self.sucursal_id, caja_id="C01", eventos=self._lote
+                self.conn, sucursal_id=self.sucursal_id, caja_id=self.caja_id, eventos=self._lote
             )
             self._lote = []
         while procesar_eventos_pendientes_cola(self.conn, limite=500).procesados:
@@ -242,6 +243,23 @@ def test_sin_historia_suficiente_no_hay_sospechas(catalogo, conn_central):
     sucursal.enviar()
 
     assert _detectar(conn_central, _a_las(HOY, 16, 30)).nuevas == []
+
+
+def test_si_llega_historia_atrasada_la_franja_se_vuelve_a_revisar(catalogo, conn_central):
+    """Sin historia no se juzga; si la historia llega después (otra caja), sí."""
+    caja = Sucursal(catalogo)
+    caja.recibir(HOY - timedelta(days=30), {LECHE: 500, REFRESCO: 500})
+    caja.dia_normal(HOY, leche=0)
+    caja.vender(_a_las(HOY, 16, 5), REFRESCO)
+    caja.enviar()
+    assert _detectar(conn_central, _a_las(HOY, 16, 30)).nuevas == []
+
+    historial = Sucursal(catalogo, caja_id="H01")
+    for dias in range(14, 0, -1):
+        historial.dia_normal(HOY - timedelta(days=dias))
+    historial.enviar()
+
+    assert [n["sku"] for n in _detectar(conn_central, _a_las(HOY, 16, 40)).nuevas] == [LECHE]
 
 
 def test_espera_a_que_la_sucursal_envie_sus_ventas_antes_de_evaluar(sucursal, conn_central):

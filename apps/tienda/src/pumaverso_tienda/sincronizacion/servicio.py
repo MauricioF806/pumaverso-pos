@@ -60,6 +60,10 @@ class CredencialRechazadaError(ConflictoSincronizacionError):
     """
 
 
+class SospechaNoEncontradaError(LookupError):
+    """Central no tiene una sospecha abierta con ese id para esta sucursal."""
+
+
 @dataclass(frozen=True, slots=True)
 class RespuestaSubida:
     """Confirmación devuelta por central tras recibir un lote de eventos."""
@@ -176,6 +180,47 @@ class TransporteCentralHttp:
             ultimo_consecutivo_confirmado=int(datos["ultimo_consecutivo_confirmado"]),
             hueco_detectado_desde=datos.get("hueco_detectado_desde"),
         )
+
+    def consultar_sospechas_fantasma(self, sucursal_id: str) -> dict[str, Any]:
+        """Reporte de inventario fantasma de esta sucursal (decisión 0009)."""
+        respuesta = self._pedir(
+            "get",
+            "/inventario/fantasma/sospechas",
+            "consultar el inventario fantasma en central",
+            params={"sucursal_id": sucursal_id},
+        )
+        return respuesta.json()
+
+    def registrar_conteo_fantasma(
+        self, sospecha_id: int, cantidad_contada: int, usuario_id: str
+    ) -> dict[str, Any]:
+        """Cierra una sospecha de esta sucursal con el conteo del gerente."""
+        respuesta = self._pedir(
+            "post",
+            f"/inventario/fantasma/sospechas/{sospecha_id}/conteo",
+            "registrar el conteo en central",
+            json={"cantidad_contada": cantidad_contada, "usuario_id": usuario_id},
+        )
+        return respuesta.json()
+
+    def _pedir(self, metodo: str, ruta: str, que: str, **kwargs: Any) -> httpx.Response:
+        try:
+            respuesta = getattr(self._cliente or httpx, metodo)(
+                f"{self._base_url}{ruta}",
+                headers=self._encabezados,
+                timeout=self._timeout,
+                **kwargs,
+            )
+        except httpx.HTTPError as error:
+            raise ErrorSincronizacion(f"No se pudo {que}: {error}") from error
+        _rechazar_si_no_acepta_la_llave(respuesta)
+        if respuesta.status_code == httpx.codes.NOT_FOUND:
+            raise SospechaNoEncontradaError(_detalle(respuesta))
+        if respuesta.is_error:
+            raise ErrorSincronizacion(
+                f"Central respondió {respuesta.status_code} al {que}: {_detalle(respuesta)}"
+            )
+        return respuesta
 
     def descargar_actualizaciones(self, sucursal_id: str, desde: datetime | None) -> PaqueteBajada:
         params: dict[str, str] = {"sucursal_id": sucursal_id}

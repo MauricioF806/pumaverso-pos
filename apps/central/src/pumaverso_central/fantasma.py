@@ -129,8 +129,11 @@ def detectar_inventario_fantasma(
 ) -> ResultadoDeteccion:
     """Revisa las franjas terminadas de cada sucursal y registra sospechas nuevas.
 
-    Se puede correr cuantas veces se quiera: cada franja se evalúa una sola vez
-    por sucursal y nunca hay dos sospechas abiertas del mismo SKU.
+    Se puede correr cuantas veces se quiera: nunca hay dos sospechas abiertas
+    del mismo SKU. Una franja que ya se evaluó con historia suficiente no se
+    vuelve a evaluar; una sin operación o con poca historia se revisa otra vez
+    mientras siga dentro de las últimas 24 horas, por si llega historia atrasada
+    (por ejemplo, al cargar el historial de una sucursal o de otra caja).
     """
     momento = ahora or datetime.now(UTC)
     resultado = ResultadoDeteccion()
@@ -286,7 +289,7 @@ def _ya_evaluada(conn: psycopg.Connection, sucursal_id: str, franja: Franja) -> 
         conn.execute(
             """
             SELECT 1 FROM inventario.franjas_evaluadas
-            WHERE sucursal_id = %s AND franja_inicio = %s
+            WHERE sucursal_id = %s AND franja_inicio = %s AND resultado = 'evaluada'
             """,
             (sucursal_id, franja.inicio),
         ).fetchone()
@@ -457,7 +460,9 @@ def _marcar_evaluada(
         """
         INSERT INTO inventario.franjas_evaluadas (sucursal_id, franja_inicio, resultado, evaluada_en)
         VALUES (%s, %s, %s, %s)
-        ON CONFLICT (sucursal_id, franja_inicio) DO NOTHING
+        ON CONFLICT (sucursal_id, franja_inicio) DO UPDATE SET
+            resultado = excluded.resultado,
+            evaluada_en = excluded.evaluada_en
         """,
         (sucursal_id, franja.inicio, resultado, momento),
     )

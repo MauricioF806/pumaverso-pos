@@ -109,17 +109,17 @@ npm install
 npm run dev
 ```
 
-Abre `http://localhost:5173` y entra con un usuario de la demo (por ejemplo `cajero1` / `1234`). Más detalles en [`apps/caja/README.md`](apps/caja/README.md).
+Abre `http://localhost:5173` y entra con un usuario de la demo: `cajero1` / `1234` para cobrar, o `gerente1` / `9999` para ver también la pestaña **Inventario** (recibir mercancía, mermas, ajustes e inventario fantasma). Más detalles en [`apps/caja/README.md`](apps/caja/README.md).
 
 ### Datos de demostración
 
-Con central y la tienda levantados, este comando (desde la raíz del repo, porque lee las llaves del `.env`) carga 3 usuarios y 12 productos en central, registra la llave de la sucursal, sincroniza la tienda y deja 24 piezas de cada producto:
+Con central y la tienda levantados, este comando (desde la raíz del repo, porque lee las llaves del `.env`) carga 4 usuarios y 12 productos en central, registra la llave de la sucursal, sincroniza la tienda y deja 24 piezas de cada producto:
 
 ```bash
 python scripts/cargar_datos_demo.py
 ```
 
-Al terminar muestra los usuarios y sus PIN (`cajero1` / `1234`, `gerente1` / `9999`…). Se puede correr varias veces sin duplicar datos. Con `--help` se ven las opciones.
+Al terminar muestra los usuarios y sus PIN (`cajero1` / `1234`, `gerente1` / `9999`, `supervisor1` / `4321`…). El supervisor sirve para autorizar los ajustes que registra el gerente: nadie autoriza su propia operación. Se puede correr varias veces sin duplicar datos. Con `--help` se ven las opciones.
 
 ### Inventario fantasma
 
@@ -135,7 +135,7 @@ Para verlo en acción, con central levantado y los datos de demostración cargad
 python scripts/simular_fantasma.py
 ```
 
-Crea una sucursal simulada con 4 semanas de ventas en la que ayer la leche dejó de venderse, y muestra la sospecha.
+Le da a S001 un historial simulado de 4 semanas en el que ayer la leche dejó de venderse. El gerente ve la sospecha en la pantalla de caja (**Inventario → Inventario fantasma**), registra el conteo y pasa directo al ajuste. El historial va a una caja aparte para no chocar con los consecutivos de la caja real. Si en el ensayo registras el conteo, la sospecha queda cerrada y la simulación se puede repetir al día siguiente.
 
 ### Uso de la API de la tienda
 

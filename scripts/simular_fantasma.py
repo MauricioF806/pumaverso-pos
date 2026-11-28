@@ -1,9 +1,10 @@
-"""Simula una sucursal con inventario fantasma para la demo (decisión 0009).
+"""Simula inventario fantasma en la sucursal S001 para la demo (decisión 0009).
 
-Crea en central una sucursal de demostración con 4 semanas de ventas normales.
-Ayer, a partir del mediodía, la leche dejó de venderse aunque el sistema dice
-que hay más de mil piezas: alguien la acomodó en la bodega y el anaquel quedó
-vacío. Después pide a central que revise y muestra la sospecha.
+Le da a la sucursal 4 semanas de historial de ventas. Ayer, a partir del
+mediodía, la leche dejó de venderse aunque el sistema dice que hay piezas:
+alguien la acomodó en la bodega y el anaquel quedó vacío. Después pide a
+central que revise y muestra la sospecha, que el gerente ve en la pantalla de
+la caja (pestaña Inventario).
 
 Uso (con central levantado y después de ``cargar_datos_demo.py``):
 
@@ -12,16 +13,20 @@ Uso (con central levantado y después de ``cargar_datos_demo.py``):
 Opciones:
 
     --central URL    Servidor central (por defecto http://127.0.0.1:8001)
-    --sucursal ID    Sucursal simulada (por defecto DEMO + mes y día, p. ej. DEMO1127)
+    --sucursal ID    Sucursal (por defecto S001, la de la tienda de la demo)
+    --caja ID        Caja donde se guarda el historial (por defecto H + mes y día, p. ej. H1127)
     --dias N         Días de historia (por defecto 28)
+
+El historial va a una caja aparte, nunca a la caja real (C01): así no choca con
+sus consecutivos. Solo se usa para la demo; en V1 una sucursal tiene una caja
+(decisión 0004). La tienda no se entera de estas ventas: su inventario local no
+cambia.
 
 Usa la llave de administración de central (``CENTRAL_LLAVE_ADMIN`` del
 ``.env``), así que hay que correrlo desde la raíz del repo.
 
 Se puede correr varias veces el mismo día: los eventos son idénticos y central
-no los duplica. Cada día usa una sucursal distinta para no chocar con la
-historia del día anterior. La sucursal simulada no afecta a la tienda real
-(S001).
+no los duplica. Cada día usa una caja de historial distinta.
 """
 
 import argparse
@@ -89,14 +94,15 @@ class Llaves(BaseSettings):
 class CajaSimulada:
     """Arma eventos válidos, con el mismo hash que calcularía una tienda real."""
 
-    def __init__(self, sucursal_id: str) -> None:
+    def __init__(self, sucursal_id: str, caja_id: str) -> None:
         self.sucursal_id = sucursal_id
+        self.caja_id = caja_id
         self.eventos: list[EventoContrato] = []
 
     def _agregar(self, tipo: TipoEvento, contenido, momento: datetime) -> None:
         datos = {
             "sucursal_id": self.sucursal_id,
-            "caja_id": "C01",
+            "caja_id": self.caja_id,
             "consecutivo": len(self.eventos) + 1,
             "tipo": tipo,
             "version_esquema": 1,
@@ -144,10 +150,12 @@ def poisson(rng: random.Random, promedio: float) -> int:
     return k
 
 
-def simular(sucursal_id: str, dias: int, ayer: datetime, catalogo: dict) -> CajaSimulada:
+def simular(
+    sucursal_id: str, dias: int, ayer: datetime, catalogo: dict, caja_id: str = "H01"
+) -> CajaSimulada:
     """Historia normal de ``dias`` días y, ayer, la leche sin venderse desde el mediodía."""
     rng = random.Random(SEMILLA)
-    caja = CajaSimulada(sucursal_id)
+    caja = CajaSimulada(sucursal_id, caja_id)
     costos = {sku: datos["costo_centavos"] for sku, datos in catalogo.items()}
     caja.recibir((ayer - timedelta(days=dias + 1)).replace(hour=7), 2000, costos)
 
@@ -194,14 +202,14 @@ def enviar(central: httpx.Client, caja: CajaSimulada) -> None:
             "/sincronizacion/eventos",
             json={
                 "sucursal_id": caja.sucursal_id,
-                "caja_id": "C01",
+                "caja_id": caja.caja_id,
                 "eventos": [e.model_dump(mode="json") for e in lote],
             },
         )
         if respuesta.status_code == 409:
             raise ErrorSimulacion(
-                f"Central ya tiene otra historia para {caja.sucursal_id}. "
-                "Usa otra sucursal, por ejemplo --sucursal DEMO2."
+                f"Central ya tiene otro historial en la caja {caja.caja_id} de "
+                f"{caja.sucursal_id}. Usa otra caja, por ejemplo --caja H2."
             )
         _verificar(respuesta, "enviar las ventas simuladas a central")
     while True:
@@ -221,7 +229,8 @@ def main(argumentos: list[str] | None = None) -> int:
 
     parser = argparse.ArgumentParser(description="Simula inventario fantasma para la demo.")
     parser.add_argument("--central", default="http://127.0.0.1:8001")
-    parser.add_argument("--sucursal", default=f"DEMO{hoy:%m%d}")
+    parser.add_argument("--sucursal", default="S001")
+    parser.add_argument("--caja", default=f"H{hoy:%m%d}")
     parser.add_argument("--dias", type=int, default=28)
     args = parser.parse_args(argumentos)
 
@@ -231,7 +240,7 @@ def main(argumentos: list[str] | None = None) -> int:
         encabezados = {"Authorization": f"Bearer {llave}"} if llave else {}
         with httpx.Client(base_url=args.central, timeout=60, headers=encabezados) as central:
             catalogo = leer_catalogo(central, args.sucursal)
-            caja = simular(args.sucursal, args.dias, ayer, catalogo)
+            caja = simular(args.sucursal, args.dias, ayer, catalogo, args.caja)
             enviar(central, caja)
             detectar = central.post(
                 "/inventario/fantasma/detectar",
@@ -251,13 +260,13 @@ def main(argumentos: list[str] | None = None) -> int:
 
     datos = reporte.json()
     print(
-        f"Sucursal simulada {args.sucursal}: {args.dias} días de historia, "
+        f"Historial simulado de {args.sucursal} (caja {args.caja}): {args.dias} días, "
         f"{len(caja.eventos)} operaciones enviadas a central."
     )
     print(f"Revisión de ayer ({ayer:%d/%m}) a las {revision:%H:%M}:\n")
     if not datos["sospechas"]:
-        print("  Sin sospechas abiertas. Si ya registraste el conteo de esta sucursal,")
-        print("  corre otra vez con otra sucursal, por ejemplo: --sucursal DEMO2")
+        print("  Sin sospechas abiertas. Si hoy ya registraste el conteo, la sospecha quedó")
+        print("  cerrada; la simulación se puede repetir mañana.")
     for s in datos["sospechas"]:
         inicio = datetime.fromisoformat(s["franja_inicio"]).astimezone(ZONA)
         fin = datetime.fromisoformat(s["franja_fin"]).astimezone(ZONA)
@@ -267,15 +276,14 @@ def main(argumentos: list[str] | None = None) -> int:
             f"{s['unidades_esperadas']:.1f} piezas y se vendieron {s['unidades_vendidas']}."
         )
         print(f"    Probabilidad de que sea casualidad: {s['probabilidad'] * 100:.2f} %")
-        print(f"    El sistema dice que hay {s['existencia_registrada']} piezas.")
         print(f"    Estado: {ESTADOS[s['estado']]}")
     nombres = {s["sku"]: s["nombre"] for s in datos["sospechas"]}
     pedido = [nombres.get(sku, sku) for sku in datos["sugerencia_pedido"]]
     print(f"\n  Agregar al pedido: {', '.join(pedido) or 'nada'}")
     print(f"  Venta perdida estimada: {pesos(datos['venta_perdida_estimada_centavos'])}")
     print(
-        f"\nReporte completo: {args.central}/inventario/fantasma/sospechas"
-        f"?sucursal_id={args.sucursal}"
+        "\nEl gerente lo ve en la pantalla de caja: pestaña Inventario, "
+        "sección Inventario fantasma."
     )
     return 0
 

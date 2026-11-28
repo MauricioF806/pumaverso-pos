@@ -1,7 +1,11 @@
 import type {
+  ConteoRegistrado,
   EstadoSincronizacion,
+  EventoCreado,
+  PartidaRecepcion,
   ProductoConsultado,
   ProductoListado,
+  ReporteFantasma,
   RespuestaLogin,
   Usuario,
   Venta,
@@ -98,4 +102,45 @@ export const api = {
     }),
 
   estadoSincronizacion: () => pedir<EstadoSincronizacion>("/sincronizacion/estado"),
+
+  // --- Inventario ---
+
+  recibirMercancia: (
+    token: string,
+    datos: { proveedor_id: string; folio_documento: string; partidas: PartidaRecepcion[] },
+  ) => pedir<EventoCreado>("/inventario/recepciones", { method: "POST", token, body: json(datos) }),
+
+  registrarMerma: (token: string, datos: { sku: string; cantidad: number; motivo: string }) =>
+    pedir<EventoCreado>("/inventario/mermas", { method: "POST", token, body: json(datos) }),
+
+  registrarAjuste: (
+    token: string,
+    datos: {
+      sku: string;
+      diferencia_cantidad: number;
+      motivo: string;
+      aprobador_id: string;
+      aprobador_pin: string;
+    },
+  ) => pedir<EventoCreado>("/inventario/ajustes", { method: "POST", token, body: json(datos) }),
+
+  inventarioFantasma: (token: string) => pedir<ReporteFantasma>("/inventario/fantasma", { token }),
+
+  registrarConteo: (token: string, sospechaId: number, cantidad_contada: number) =>
+    pedir<ConteoRegistrado>(`/inventario/fantasma/${sospechaId}/conteo`, {
+      method: "POST",
+      token,
+      body: json({ cantidad_contada }),
+    }),
 };
+
+/** Mensaje para el usuario. Si la sesión ya no sirve (401), avisa y devuelve null. */
+export function explicarError(e: unknown, alVencerSesion: (motivo: string) => void): string | null {
+  if (e instanceof ErrorApi && e.estado === 401) {
+    alVencerSesion(e.detalle);
+    return null;
+  }
+  if (e instanceof ErrorApi && e.estado === 422) return "Revisa los datos: falta algo o no es válido.";
+  if (e instanceof ErrorApi || e instanceof SinServicioLocal) return e.message;
+  return "Ocurrió un error inesperado.";
+}

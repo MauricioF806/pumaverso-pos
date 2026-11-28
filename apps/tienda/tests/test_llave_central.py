@@ -97,3 +97,27 @@ def test_la_tienda_toma_la_llave_de_su_configuracion(monkeypatch):
         get_settings.cache_clear()
 
     assert transporte._encabezados == {"Authorization": f"Bearer {LLAVE}"}
+
+
+def test_el_reporte_de_fantasma_tambien_lleva_la_llave():
+    central = CentralQueAnota()
+
+    _transporte(central).consultar_sospechas_fantasma("S001")
+
+    assert central.encabezados[0]["authorization"] == f"Bearer {LLAVE}"
+
+
+def test_un_conteo_de_una_sospecha_que_no_existe_se_distingue():
+    from pumaverso_tienda.sincronizacion import SospechaNoEncontradaError
+
+    def responde_404(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(404, json={"detail": "No hay una sospecha abierta con id 9."})
+
+    transporte = TransporteCentralHttp(
+        "http://central",
+        llave=LLAVE,
+        cliente=httpx.Client(transport=httpx.MockTransport(responde_404)),
+    )
+
+    with pytest.raises(SospechaNoEncontradaError):
+        transporte.registrar_conteo_fantasma(9, 0, "gerente1")
