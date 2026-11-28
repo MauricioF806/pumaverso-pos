@@ -3,11 +3,15 @@ import { ErrorApi, SinServicioLocal, api } from "./api";
 import { Cobro } from "./componentes/Cobro";
 import { EstadoConexion } from "./componentes/EstadoConexion";
 import { InicioSesion } from "./componentes/InicioSesion";
+import { Inventario } from "./componentes/Inventario";
 import { VentasDelTurno } from "./componentes/VentasDelTurno";
 import { borrarToken, guardarToken, leerToken } from "./sesion";
 import type { Usuario } from "./tipos";
 
-type Vista = "cobro" | "ventas";
+type Vista = "cobro" | "ventas" | "inventario";
+
+// Quién ve la pestaña Inventario; la tienda vuelve a validar cada operación.
+const ROLES_INVENTARIO = new Set(["gerente", "supervisor"]);
 type Identidad = { sucursal_id: string; caja_id: string } | null;
 type Estado =
   | { fase: "reanudando" }
@@ -108,6 +112,16 @@ export function App() {
           >
             Ventas del turno
           </button>
+          {ROLES_INVENTARIO.has(estado.usuario.rol) && (
+            <button
+              type="button"
+              className="pestana"
+              aria-current={vista === "inventario" ? "page" : undefined}
+              onClick={() => setVista("inventario")}
+            >
+              Inventario
+            </button>
+          )}
         </nav>
         <EstadoConexion />
         <div className="barra__usuario">
@@ -121,10 +135,14 @@ export function App() {
       </header>
 
       <main className="contenido">
-        {vista === "cobro" ? (
-          <Cobro token={estado.token} alVencerSesion={vencerSesion} />
-        ) : (
-          <VentasDelTurno token={estado.token} alVencerSesion={vencerSesion} />
+        {vista === "cobro" && <Cobro token={estado.token} alVencerSesion={vencerSesion} />}
+        {vista === "ventas" && <VentasDelTurno token={estado.token} alVencerSesion={vencerSesion} />}
+        {vista === "inventario" && (
+          <Inventario
+            token={estado.token}
+            usuarioId={estado.usuario.usuario_id}
+            alVencerSesion={vencerSesion}
+          />
         )}
       </main>
     </div>

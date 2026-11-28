@@ -707,6 +707,276 @@ input {
   gap: 0.75rem;
 }
 
+.dialogo--neutral {
+  border-top-color: var(--tinta);
+}
+
+/* ---------- Inventario (gerente y supervisor) ---------- */
+
+.inventario {
+  display: grid;
+  grid-template-columns: 14rem minmax(0, 1fr);
+  gap: 2rem;
+  align-items: start;
+  max-width: 72rem;
+  margin: 0 auto;
+}
+
+.inventario__secciones {
+  display: grid;
+  gap: 0.25rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.seccion {
+  display: grid;
+  gap: 0.1rem;
+  padding: 0.7rem 0.9rem;
+  border: 0;
+  border-left: 4px solid transparent;
+  border-radius: 0 var(--radio) var(--radio) 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.seccion:hover {
+  background: rgb(255 255 255 / 0.55);
+}
+
+.seccion[aria-current="page"] {
+  border-left-color: var(--tinta);
+  background: var(--papel);
+}
+
+.seccion__nombre {
+  font-weight: 600;
+}
+
+.seccion__detalle {
+  font-size: var(--t-chica);
+  color: var(--tinta-suave);
+}
+
+.formulario {
+  display: grid;
+  gap: 1.25rem;
+  max-width: 52rem;
+}
+
+.formulario__cuerpo {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.formulario__encabezado {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.formulario__encabezado--con-accion {
+  grid-template-columns: 1fr auto;
+  align-items: start;
+  gap: 1rem;
+}
+
+.formulario__titulo {
+  font-size: var(--t-grande);
+  line-height: 1.2;
+}
+
+.formulario__texto {
+  max-width: 62ch;
+  color: var(--tinta-suave);
+}
+
+.formulario__fila {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+.formulario__acciones {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.formulario__resumen {
+  margin-right: auto;
+  font-variant-numeric: tabular-nums;
+}
+
+.buscador {
+  display: grid;
+  gap: 1rem;
+}
+
+.tabla--captura td {
+  padding-block: 0.5rem;
+}
+
+.campo__entrada--corta {
+  width: 8rem;
+  min-height: 2.5rem;
+  padding-block: 0.35rem;
+  font-variant-numeric: tabular-nums;
+}
+
+/* El producto elegido, para que no haya duda de qué se está registrando. */
+.elegido {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0.1rem 1rem;
+  align-items: center;
+  padding: 0.9rem 1.1rem;
+  background: var(--papel);
+  border-radius: var(--radio);
+}
+
+.elegido__nombre {
+  font-size: var(--t-media);
+  font-weight: 600;
+}
+
+.elegido__dato {
+  grid-row: 2;
+  color: var(--tinta-suave);
+}
+
+.elegido .boton {
+  grid-row: 1 / span 2;
+  grid-column: 2;
+}
+
+.opciones {
+  display: grid;
+  gap: 0.35rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.opcion {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+
+.opcion input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--tinta);
+}
+
+.diferencia {
+  font-size: var(--t-media);
+}
+
+.diferencia strong {
+  font-variant-numeric: tabular-nums;
+}
+
+.diferencia--falta strong {
+  color: var(--rojo);
+}
+
+.diferencia--sobra strong {
+  color: var(--billete-oscuro);
+}
+
+.perdida {
+  padding: 0.9rem 1.1rem;
+  border-radius: var(--radio);
+  background: var(--ambar-fondo);
+  color: var(--ambar);
+}
+
+.perdida strong {
+  font-size: var(--t-media);
+  font-variant-numeric: tabular-nums;
+}
+
+.resuelta {
+  display: grid;
+  gap: 0.75rem;
+  justify-items: start;
+}
+
+.sospechas {
+  display: grid;
+  gap: 1rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sospecha {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1.1rem 1.25rem;
+  border-left: 5px solid var(--ambar);
+  border-radius: 0 var(--radio) var(--radio) 0;
+  background: var(--papel);
+}
+
+.sospecha--escalada {
+  border-left-color: var(--rojo);
+}
+
+.sospecha__cabeza {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+}
+
+.sospecha__nombre {
+  margin: 0;
+  font-size: var(--t-media);
+}
+
+.sospecha__estado {
+  font-size: var(--t-chica);
+  font-weight: 600;
+  color: var(--ambar);
+}
+
+.sospecha--escalada .sospecha__estado {
+  color: var(--rojo);
+}
+
+.sospecha__datos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 2.5rem;
+  margin: 0;
+}
+
+.sospecha__datos dt {
+  font-size: var(--t-chica);
+  color: var(--tinta-suave);
+}
+
+.sospecha__datos dd {
+  margin: 0;
+  font-size: var(--t-media);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.sospecha__conteo {
+  display: grid;
+  grid-template-columns: minmax(0, 18rem) auto;
+  gap: 0.75rem;
+  align-items: end;
+}
+
 /* ---------- Pantallas angostas ---------- */
 
 @media (max-width: 52rem) {
@@ -722,16 +992,28 @@ input {
     margin-left: 0;
   }
 
-  .dialogo__fila {
+  .dialogo__fila,
+  .formulario__fila,
+  .inventario,
+  .sospecha__conteo {
     grid-template-columns: 1fr;
+  }
+
+  .inventario__secciones {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .seccion__detalle {
+    display: none;
   }
 
   .ticket__total strong {
     font-size: var(--t-grande);
   }
 
-  .tabla th:nth-child(3),
-  .tabla td:nth-child(3) {
+  .tabla:not(.tabla--captura) th:nth-child(3),
+  .tabla:not(.tabla--captura) td:nth-child(3) {
     display: none;
   }
 }

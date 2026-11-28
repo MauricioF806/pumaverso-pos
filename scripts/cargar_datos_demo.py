@@ -49,6 +49,8 @@ USUARIOS = (
     UsuarioDemo("cajero1", "Ana López", "cajero", "1234"),
     UsuarioDemo("cajero2", "Luis Pérez", "cajero", "5678"),
     UsuarioDemo("gerente1", "Rosa Díaz", "gerente", "9999"),
+    # Los ajustes los aprueba alguien distinto de quien los registra (decisión 0006).
+    UsuarioDemo("supervisor1", "Carlos Ruiz", "supervisor", "4321"),
 )
 
 PRODUCTOS = (

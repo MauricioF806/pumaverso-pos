@@ -11,5 +11,7 @@ export default defineConfig({
   test: {
     environment: "jsdom",
     setupFiles: ["./src/pruebas/preparar.ts"],
+    // Las horas se muestran en la zona de la sucursal; así las pruebas no dependen de la compu.
+    env: { TZ: "America/Mexico_City" },
   },
 });

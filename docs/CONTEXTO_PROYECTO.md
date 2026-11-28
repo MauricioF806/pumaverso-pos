@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.8
+**Versión del documento:** 1.9
 
 ---
 
@@ -411,6 +411,8 @@ Hasta la elaboración de este documento:
 
 - La API de central pide llaves: una por sucursal para sincronizar y una de administración (decisión 0010).
 
-Pendiente: pantallas del gerente (recepciones, mermas, ajustes y reporte de inventario fantasma).
+- La pantalla de caja tiene una pestaña Inventario para el gerente y el supervisor: recepciones, mermas, ajustes autorizados por otra persona e inventario fantasma con conteo (decisión 0011).
 
-**Próximo objetivo:** pantallas del gerente.
+Pendiente: las decisiones abiertas de la sección 9 (cobros sin confirmar tras un apagón, traspasos entre sucursales, plazo de escalamiento) y empaquetar la caja con Tauri (opcional).
+
+**Próximo objetivo:** ensayar la demo completa y decidir los pendientes de la sección 9.

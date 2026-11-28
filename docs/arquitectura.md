@@ -57,3 +57,4 @@ Cada decisión vive en su propio archivo dentro de [`decisiones/`](decisiones/).
 | [0008](decisiones/0008-pantalla-de-caja-web.md) | Pantalla de caja como aplicación web; Tauri opcional | Aceptada |
 | [0009](decisiones/0009-deteccion-de-inventario-fantasma.md) | Detección de inventario fantasma y cola aplicada de uno en uno | Aceptada |
 | [0010](decisiones/0010-credenciales-en-la-api-de-central.md) | Credenciales en la API de central | Aceptada |
+| [0011](decisiones/0011-pantallas-del-gerente.md) | Pantallas del gerente en la caja | Aceptada |
