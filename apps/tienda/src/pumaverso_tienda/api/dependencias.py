@@ -11,6 +11,7 @@ from pumaverso_tienda.config import get_settings
 from pumaverso_tienda.persistencia import abrir_conexion
 from pumaverso_tienda.sincronizacion import TransporteCentral, TransporteCentralHttp
 from pumaverso_tienda.usuarios import (
+    ROLES_APROBADORES,
     CredencialesExpiradasError,
     CredencialesInvalidasError,
     SesionInvalidaError,
@@ -65,3 +66,15 @@ def obtener_usuario_actual(
         ) from error
     except (UsuarioInactivoError, CredencialesExpiradasError) as error:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(error)) from error
+
+
+def requerir_gerente(
+    usuario: Annotated[UsuarioLocal, Depends(obtener_usuario_actual)],
+) -> UsuarioLocal:
+    """Solo gerente o supervisor: reportes e inventario fantasma (decisiones 0011 y 0012)."""
+    if usuario.rol not in ROLES_APROBADORES:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Esta consulta es para el gerente o el supervisor.",
+        )
+    return usuario

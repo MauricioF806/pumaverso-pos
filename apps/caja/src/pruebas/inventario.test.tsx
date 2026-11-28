@@ -23,9 +23,31 @@ async function entrarComo(persona: typeof ROSA, rutas: Rutas = {}) {
   return { usuario, llamadas };
 }
 
+const REPORTE_VACIO = {
+  cuerpo: {
+    desde: "",
+    hasta: "",
+    ventas: 0,
+    total_centavos: 0,
+    piezas: 0,
+    ticket_promedio_centavos: 0,
+    canceladas: 0,
+    canceladas_centavos: 0,
+    con_inventario_negativo: 0,
+    por_cajero: [],
+    productos_mas_vendidos: [],
+  },
+};
+
+async function abrirGerencia(rutas: Rutas = {}) {
+  const sesion = await entrarComo(ROSA, { "GET /reportes/ventas": REPORTE_VACIO, ...rutas });
+  await sesion.usuario.click(screen.getByRole("button", { name: "Gerencia" }));
+  return sesion;
+}
+
 async function abrirInventario(rutas: Rutas = {}) {
-  const sesion = await entrarComo(ROSA, rutas);
-  await sesion.usuario.click(screen.getByRole("button", { name: "Inventario" }));
+  const sesion = await abrirGerencia(rutas);
+  await sesion.usuario.click(screen.getByRole("button", { name: /Recibir mercancía/ }));
   return sesion;
 }
 
@@ -34,17 +56,64 @@ const EVENTO = (consecutivo: number, tipo: string) => ({
   cuerpo: { sucursal_id: "S001", caja_id: "C01", consecutivo, tipo, hash: "h" },
 });
 
-describe("pestaña Inventario", () => {
+describe("pestaña Gerencia", () => {
   it("la ve el gerente, no el cajero", async () => {
     await entrarComo(ANA);
 
-    expect(screen.queryByRole("button", { name: "Inventario" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Gerencia" })).not.toBeInTheDocument();
   });
 
-  it("el gerente la ve y empieza en Recibir mercancía", async () => {
-    await abrirInventario();
+  it("el gerente la ve y empieza en Ventas del día", async () => {
+    await abrirGerencia();
 
-    expect(screen.getByRole("heading", { name: "Recibir mercancía" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Ventas del día" })).toBeInTheDocument();
+  });
+});
+
+describe("ventas del día", () => {
+  it("muestra el corte, por cajero y lo más vendido", async () => {
+    const { llamadas } = await abrirGerencia({
+      "GET /reportes/ventas": {
+        cuerpo: {
+          ...REPORTE_VACIO.cuerpo,
+          ventas: 2,
+          total_centavos: 13500,
+          piezas: 4,
+          ticket_promedio_centavos: 6750,
+          canceladas: 1,
+          canceladas_centavos: 9000,
+          por_cajero: [
+            { usuario_id: "cajero2", nombre: "Luis Pérez", ventas: 1, total_centavos: 7500 },
+            { usuario_id: "cajero1", nombre: "Ana López", ventas: 1, total_centavos: 6000 },
+          ],
+          productos_mas_vendidos: [
+            { sku: LECHE.sku, nombre: LECHE.nombre, piezas: 3, total_centavos: 9000 },
+          ],
+        },
+      },
+    });
+
+    const corte = await screen.findByLabelText("Corte del día");
+    expect(corte).toHaveTextContent("Vendido $135.00");
+    expect(corte).toHaveTextContent("Ticket promedio$67.50");
+    expect(corte).toHaveTextContent("Canceladas1 ($90.00)");
+    const cajeros = screen.getByRole("table", { name: "Por cajero" });
+    expect(within(cajeros).getAllByRole("row")[1]).toHaveTextContent("Luis Pérez1$75.00");
+    expect(screen.getByRole("table", { name: "Lo más vendido" })).toHaveTextContent("Leche entera 1 L3");
+
+    // Pide de la medianoche local a la siguiente (la sucursal está en Ciudad de México).
+    const ruta = llamadas.find((l) => l.ruta.startsWith("/reportes/ventas"))?.ruta ?? "";
+    const parametros = new URLSearchParams(ruta.split("?")[1]);
+    const desde = new Date(parametros.get("desde") ?? "");
+    const hasta = new Date(parametros.get("hasta") ?? "");
+    expect(desde.toISOString()).toMatch(/T06:00:00\.000Z$/);
+    expect(hasta.getTime() - desde.getTime()).toBe(24 * 60 * 60 * 1000);
+  });
+
+  it("sin ventas lo dice", async () => {
+    await abrirGerencia();
+
+    expect(await screen.findByText("Sin ventas este día.")).toBeInTheDocument();
   });
 });
 
@@ -92,7 +161,7 @@ describe("merma", () => {
         return EVENTO(10, "merma");
       },
     });
-    await usuario.click(screen.getByRole("button", { name: /Merma/ }));
+    await usuario.click(screen.getByRole("button", { name: /^Merma/ }));
     await usuario.type(screen.getByLabelText(/Producto/), `${LECHE.sku}{Enter}`);
     await usuario.type(await screen.findByLabelText("Piezas que salen"), "2");
     await usuario.click(screen.getByLabelText("Dañado o roto"));

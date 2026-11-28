@@ -19,6 +19,10 @@ class CentralSettings(BaseSettings):
     # central: dar de alta usuarios y productos, ver la cola ni registrar llaves.
     llave_admin: str | None = Field(default=None, min_length=32)
 
+    # Límite de tasa por sucursal (decisión 0012). 0 = sin límite.
+    limite_por_minuto: int = Field(default=180, ge=0)
+    limite_rafaga: int = Field(default=60, ge=1)
+
     # Procesamiento automático de la cola (decisión 0007).
     cola_automatica: bool = True
     cola_intervalo_segundos: float = Field(default=5.0, gt=0)

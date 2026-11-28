@@ -14,11 +14,14 @@ def abrir_conexion(ruta: Path | str) -> sqlite3.Connection:
     - ``autocommit=True``: Python no abre transacciones por su cuenta. Toda
       escritura que deba ser atómica se hace dentro de ``transaccion()``.
     - ``foreign_keys = ON``: SQLite no revisa llaves foráneas si no se activa.
+    - ``check_same_thread=False``: FastAPI abre la conexión de una petición en un
+      hilo y la usa en otro. Es seguro porque cada conexión la usa una sola
+      petición a la vez; con la revisión activa, el cobro fallaba de vez en cuando.
     """
     if str(ruta) != ":memory:":
         Path(ruta).parent.mkdir(parents=True, exist_ok=True)
 
-    conexion = sqlite3.connect(ruta, autocommit=True)
+    conexion = sqlite3.connect(ruta, autocommit=True, check_same_thread=False)
     conexion.row_factory = sqlite3.Row
     conexion.execute("PRAGMA journal_mode = WAL")
     conexion.execute("PRAGMA synchronous = FULL")

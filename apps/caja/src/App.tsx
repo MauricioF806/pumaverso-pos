@@ -10,7 +10,7 @@ import type { Usuario } from "./tipos";
 
 type Vista = "cobro" | "ventas" | "inventario";
 
-// Quién ve la pestaña Inventario; la tienda vuelve a validar cada operación.
+// Quién ve la pestaña Gerencia; la tienda vuelve a validar cada operación.
 const ROLES_INVENTARIO = new Set(["gerente", "supervisor"]);
 type Identidad = { sucursal_id: string; caja_id: string } | null;
 type Estado =
@@ -119,7 +119,7 @@ export function App() {
               aria-current={vista === "inventario" ? "page" : undefined}
               onClick={() => setVista("inventario")}
             >
-              Inventario
+              Gerencia
             </button>
           )}
         </nav>

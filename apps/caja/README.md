@@ -1,6 +1,6 @@
 # Pantalla de caja
 
-Interfaz de la caja: el cajero inicia sesión, cobra y ve las ventas del turno; el gerente y el supervisor además operan el inventario. Es una aplicación web con TypeScript, React y Vite que habla con la API de la tienda (`apps/tienda`). Ver las decisiones 0008 y 0011.
+Interfaz de la caja: el cajero inicia sesión, cobra y ve las ventas del turno; el gerente y el supervisor además operan el inventario. Es una aplicación web con TypeScript, React y Vite que habla con la API de la tienda (`apps/tienda`). Ver las decisiones 0008, 0011 y 0012.
 
 ## Requisitos
 
@@ -27,10 +27,10 @@ Si la tienda está en otra dirección, copia `.env.example` como `.env.local` y 
 | Abrir caja | Entrar con usuario y PIN. Si recarga la página, la sesión se reanuda sola. |
 | Cobrar | Escanear o escribir el código (Enter agrega), buscar por nombre, ajustar cantidades, capturar con cuánto paga y cobrar con el botón o con **F12**. El cambio queda a la vista al terminar. |
 | Ventas del turno | Ver las últimas ventas y cancelar una con el usuario y PIN de un gerente o supervisor. |
-| Inventario (solo gerente y supervisor) | **Recibir mercancía** con piezas y costo de la factura; **merma** de producto caducado o dañado; **ajuste** cuando el conteo no cuadra, autorizado por otra persona; **inventario fantasma**: ver qué dejó de venderse, registrar el conteo y pasar directo al ajuste. |
+| Gerencia (solo gerente y supervisor) | **Ventas del día**: corte con total, ticket promedio, canceladas, ventas por cajero y lo más vendido; **recibir mercancía** con piezas y costo de la factura; **merma** de producto caducado o dañado; **ajuste** cuando el conteo no cuadra, autorizado por otra persona; **inventario fantasma**: ver qué dejó de venderse, registrar el conteo y pasar directo al ajuste. |
 | Barra superior | Qué caja es, quién atiende y el estado de la conexión con central. |
 
-Recibir mercancía, merma y ajuste funcionan sin conexión, como las ventas. El inventario fantasma necesita conexión, porque el reporte lo calcula central.
+Ventas del día, recibir mercancía, merma y ajuste funcionan sin conexión, como las ventas. El inventario fantasma necesita conexión, porque el reporte lo calcula central.
 
 El indicador de conexión consulta a la tienda cada 5 segundos:
 
@@ -65,8 +65,9 @@ src/
 │   ├── DialogoCancelacion.tsx
 │   ├── DialogoAprobacion.tsx   # usuario y PIN de quien autoriza un ajuste
 │   ├── EstadoConexion.tsx
-│   ├── Inventario.tsx          # pestaña del gerente y sus secciones
+│   ├── Inventario.tsx          # pestaña Gerencia y sus secciones
 │   └── inventario/
+│       ├── VentasDelDia.tsx    # corte del día
 │       ├── BuscadorProducto.tsx
 │       ├── Recepcion.tsx
 │       ├── Merma.tsx

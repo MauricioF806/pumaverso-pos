@@ -29,6 +29,15 @@ URL_PRUEBAS_POR_DEFECTO = "postgresql://pumaverso:pumaverso@127.0.0.1:5432/pumav
 SEGUNDOS_ESPERA_CONEXION = 3
 
 
+@pytest.fixture(autouse=True)
+def _limite_de_tasa_limpio():
+    """Cada prueba empieza con las cubetas del límite de tasa llenas."""
+    from pumaverso_central.main import limitador
+
+    limitador.reiniciar()
+    yield
+
+
 def _url_pruebas() -> str:
     url = os.environ.get("CENTRAL_TEST_DATABASE_URL", URL_PRUEBAS_POR_DEFECTO)
     if url == get_central_settings().database_url:

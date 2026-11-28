@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.9
+**Versión del documento:** 1.10
 
 ---
 
@@ -371,7 +371,6 @@ Los siguientes puntos todavía requieren una decisión explícita del equipo:
 - Establecer cuánto tiempo puede transcurrir antes de escalar un conteo físico pendiente.
 - Definir la fuente y el periodo de referencia para el historial de ventas.
 - Documentar como decisión el uso de un solo tipo de evento `traspaso` con campo `direccion` (salida o entrada).
-- Precisar el procedimiento para resolver ventas cuyo cobro no pudo confirmarse tras un apagón.
 
 Estas decisiones no deben asumirse como definitivas hasta que el equipo las acuerde y documente.
 
@@ -411,8 +410,10 @@ Hasta la elaboración de este documento:
 
 - La API de central pide llaves: una por sucursal para sincronizar y una de administración (decisión 0010).
 
-- La pantalla de caja tiene una pestaña Inventario para el gerente y el supervisor: recepciones, mermas, ajustes autorizados por otra persona e inventario fantasma con conteo (decisión 0011).
+- La pantalla de caja tiene una pestaña para el gerente y el supervisor (hoy Gerencia): recepciones, mermas, ajustes autorizados por otra persona e inventario fantasma con conteo (decisión 0011).
 
-Pendiente: las decisiones abiertas de la sección 9 (cobros sin confirmar tras un apagón, traspasos entre sucursales, plazo de escalamiento) y empaquetar la caja con Tauri (opcional).
+- Se completó el alcance de V1 del PRD: límite de tasa por sucursal en central, consulta y revisión de la cola de auditoría, y reporte de ventas del día para el gerente. Se corrigió un error que hacía fallar el cobro al azar (conexión SQLite entre hilos) y se documentó por qué no existe la "venta sin cobro confirmado" (decisión 0012).
 
-**Próximo objetivo:** ensayar la demo completa y decidir los pendientes de la sección 9.
+Fuera de V1 y pendiente para después: traspasos entre sucursales (el contrato del evento ya existe), empaquetar la caja con Tauri y una pantalla de administración en central.
+
+**Próximo objetivo:** ensayar la demo completa.

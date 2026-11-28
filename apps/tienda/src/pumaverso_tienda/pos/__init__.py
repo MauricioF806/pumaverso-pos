@@ -7,6 +7,7 @@ from pumaverso_tienda.pos.consultas import (
     listar_ventas_recientes,
     obtener_venta,
 )
+from pumaverso_tienda.pos.reportes import ReporteVentas, reporte_de_ventas
 from pumaverso_tienda.pos.servicio import (
     ItemVentaSolicitado,
     ResultadoVenta,
@@ -20,6 +21,7 @@ __all__ = [
     "ItemVentaSolicitado",
     "PartidaVenta",
     "RelojAtrasadoError",
+    "ReporteVentas",
     "ResultadoVenta",
     "VentaNoCancelableError",
     "VentaRegistrada",
@@ -27,4 +29,5 @@ __all__ = [
     "listar_ventas_recientes",
     "obtener_venta",
     "registrar_venta",
+    "reporte_de_ventas",
 ]
