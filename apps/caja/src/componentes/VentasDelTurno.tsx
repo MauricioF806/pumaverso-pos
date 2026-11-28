@@ -74,7 +74,7 @@ export function VentasDelTurno({ token, alVencerSesion }: Props) {
       )}
 
       {ventas && ventas.length > 0 && (
-        <table className="tabla">
+        <table className="tabla tabla--ventas">
           <thead>
             <tr>
               <th scope="col">Hora</th>

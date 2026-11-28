@@ -99,6 +99,12 @@ En desarrollo, `scripts/cargar_datos_demo.py` registra en central la llave de `L
 
 Si la tienda dice que central rechazó su llave, revisa que `LLAVE_CENTRAL` sea la registrada para su `SUCURSAL_ID`. Las ventas no se pierden: se envían en cuanto la llave es correcta.
 
+Cada sucursal tiene además un límite de peticiones (decisión 0012): si se pasa, central responde 429 y la tienda reintenta un poco después, sin perder nada.
+
+### Auditoría
+
+Las operaciones de un usuario que ya estaba dado de baja en central (por ejemplo, porque la tienda estaba sin conexión y no se había enterado) se apartan para revisión. Con la llave de administración: `GET /auditoria` muestra las pendientes y `POST /auditoria/{id}/revisar` deja constancia de quién las revisó y qué concluyó.
+
 ### Pantalla de caja
 
 Necesita Node.js 20 o más nuevo. Con la tienda levantada, en otra terminal:
@@ -109,7 +115,7 @@ npm install
 npm run dev
 ```
 
-Abre `http://localhost:5173` y entra con un usuario de la demo: `cajero1` / `1234` para cobrar, o `gerente1` / `9999` para ver también la pestaña **Inventario** (recibir mercancía, mermas, ajustes e inventario fantasma). Más detalles en [`apps/caja/README.md`](apps/caja/README.md).
+Abre `http://localhost:5173` y entra con un usuario de la demo: `cajero1` / `1234` para cobrar, o `gerente1` / `9999` para ver también la pestaña **Gerencia** (ventas del día, recibir mercancía, mermas, ajustes e inventario fantasma). Más detalles en [`apps/caja/README.md`](apps/caja/README.md).
 
 ### Datos de demostración
 
@@ -135,7 +141,7 @@ Para verlo en acción, con central levantado y los datos de demostración cargad
 python scripts/simular_fantasma.py
 ```
 
-Le da a S001 un historial simulado de 4 semanas en el que ayer la leche dejó de venderse. El gerente ve la sospecha en la pantalla de caja (**Inventario → Inventario fantasma**), registra el conteo y pasa directo al ajuste. El historial va a una caja aparte para no chocar con los consecutivos de la caja real. Si en el ensayo registras el conteo, la sospecha queda cerrada y la simulación se puede repetir al día siguiente.
+Le da a S001 un historial simulado de 4 semanas en el que ayer la leche dejó de venderse. El gerente ve la sospecha en la pantalla de caja (**Gerencia → Inventario fantasma**), registra el conteo y pasa directo al ajuste. El historial va a una caja aparte para no chocar con los consecutivos de la caja real. Si en el ensayo registras el conteo, la sospecha queda cerrada y la simulación se puede repetir al día siguiente.
 
 ### Uso de la API de la tienda
 

@@ -166,6 +166,7 @@ class TransporteCentralHttp:
         except httpx.HTTPError as error:
             raise ErrorSincronizacion(f"Error al subir eventos a central: {error}") from error
         _rechazar_si_no_acepta_la_llave(respuesta)
+        _esperar_si_central_lo_pide(respuesta)
         if respuesta.status_code == httpx.codes.CONFLICT:
             raise ConflictoSincronizacionError(
                 f"Central rechazó los eventos por conflicto: {_detalle(respuesta)}"
@@ -214,6 +215,7 @@ class TransporteCentralHttp:
         except httpx.HTTPError as error:
             raise ErrorSincronizacion(f"No se pudo {que}: {error}") from error
         _rechazar_si_no_acepta_la_llave(respuesta)
+        _esperar_si_central_lo_pide(respuesta)
         if respuesta.status_code == httpx.codes.NOT_FOUND:
             raise SospechaNoEncontradaError(_detalle(respuesta))
         if respuesta.is_error:
@@ -234,6 +236,7 @@ class TransporteCentralHttp:
                 timeout=self._timeout,
             )
             _rechazar_si_no_acepta_la_llave(respuesta)
+            _esperar_si_central_lo_pide(respuesta)
             respuesta.raise_for_status()
         except httpx.HTTPError as error:
             raise ErrorSincronizacion(
@@ -412,6 +415,12 @@ def _asegurar_zona_horaria(ahora: datetime | None) -> datetime:
     if momento.tzinfo is None:
         raise ValueError("La fecha debe incluir zona horaria.")
     return momento.astimezone(UTC)
+
+
+def _esperar_si_central_lo_pide(respuesta: httpx.Response) -> None:
+    """429: central pide bajar el ritmo. Es pasajero; el trabajador espera y reintenta."""
+    if respuesta.status_code == httpx.codes.TOO_MANY_REQUESTS:
+        raise ErrorSincronizacion(f"Central pidió esperar: {_detalle(respuesta)}")
 
 
 def _rechazar_si_no_acepta_la_llave(respuesta: httpx.Response) -> None:

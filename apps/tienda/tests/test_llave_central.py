@@ -121,3 +121,26 @@ def test_un_conteo_de_una_sospecha_que_no_existe_se_distingue():
 
     with pytest.raises(SospechaNoEncontradaError):
         transporte.registrar_conteo_fantasma(9, 0, "gerente1")
+
+
+def test_si_central_pide_esperar_es_pasajero_y_no_conflicto():
+    from pumaverso_tienda.sincronizacion import ErrorSincronizacion
+
+    def responde_429(peticion: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            429, json={"detail": "Demasiadas peticiones de la sucursal S001: espera 2 s."}
+        )
+
+    transporte = TransporteCentralHttp(
+        "http://central",
+        llave=LLAVE,
+        cliente=httpx.Client(transport=httpx.MockTransport(responde_429)),
+    )
+
+    for llamada in (
+        lambda: transporte.descargar_actualizaciones("S001", None),
+        lambda: transporte.subir_eventos("S001", "C01", []),
+    ):
+        with pytest.raises(ErrorSincronizacion, match="Central pidió esperar") as error:
+            llamada()
+        assert not isinstance(error.value, CredencialRechazadaError)

@@ -90,6 +90,11 @@ CREATE TABLE IF NOT EXISTS inventario.cola_auditoria (
     UNIQUE (sucursal_id, caja_id, consecutivo)
 );
 
+-- Revisión de la cola de auditoría (decisión 0012).
+ALTER TABLE inventario.cola_auditoria ADD COLUMN IF NOT EXISTS revisada_en TIMESTAMPTZ NULL;
+ALTER TABLE inventario.cola_auditoria ADD COLUMN IF NOT EXISTS revisada_por TEXT NULL;
+ALTER TABLE inventario.cola_auditoria ADD COLUMN IF NOT EXISTS nota TEXT NULL;
+
 -- Llaves de las sucursales: solo su SHA-256 (decisión 0010).
 CREATE TABLE IF NOT EXISTS sincronizacion.credenciales_sucursal (
     sucursal_id     TEXT        PRIMARY KEY,

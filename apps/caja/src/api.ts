@@ -6,6 +6,7 @@ import type {
   ProductoConsultado,
   ProductoListado,
   ReporteFantasma,
+  ReporteVentas,
   RespuestaLogin,
   Usuario,
   Venta,
@@ -123,6 +124,12 @@ export const api = {
       aprobador_pin: string;
     },
   ) => pedir<EventoCreado>("/inventario/ajustes", { method: "POST", token, body: json(datos) }),
+
+  reporteVentas: (token: string, desde: Date, hasta: Date) =>
+    pedir<ReporteVentas>(
+      `/reportes/ventas?${new URLSearchParams({ desde: desde.toISOString(), hasta: hasta.toISOString() })}`,
+      { token },
+    ),
 
   inventarioFantasma: (token: string) => pedir<ReporteFantasma>("/inventario/fantasma", { token }),
 

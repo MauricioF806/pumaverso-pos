@@ -4,7 +4,7 @@ Le da a la sucursal 4 semanas de historial de ventas. Ayer, a partir del
 mediodía, la leche dejó de venderse aunque el sistema dice que hay piezas:
 alguien la acomodó en la bodega y el anaquel quedó vacío. Después pide a
 central que revise y muestra la sospecha, que el gerente ve en la pantalla de
-la caja (pestaña Inventario).
+la caja (pestaña Gerencia).
 
 Uso (con central levantado y después de ``cargar_datos_demo.py``):
 
@@ -282,7 +282,7 @@ def main(argumentos: list[str] | None = None) -> int:
     print(f"\n  Agregar al pedido: {', '.join(pedido) or 'nada'}")
     print(f"  Venta perdida estimada: {pesos(datos['venta_perdida_estimada_centavos'])}")
     print(
-        "\nEl gerente lo ve en la pantalla de caja: pestaña Inventario, "
+        "\nEl gerente lo ve en la pantalla de caja: pestaña Gerencia, "
         "sección Inventario fantasma."
     )
     return 0

@@ -17,7 +17,7 @@ from pydantic import BaseModel, Field
 from pumaverso_tienda.api.dependencias import (
     obtener_conexion,
     obtener_transporte_central,
-    obtener_usuario_actual,
+    requerir_gerente,
 )
 from pumaverso_tienda.catalogo import obtener_producto
 from pumaverso_tienda.config import get_settings
@@ -27,20 +27,9 @@ from pumaverso_tienda.sincronizacion import (
     ErrorSincronizacion,
     SospechaNoEncontradaError,
 )
-from pumaverso_tienda.usuarios import ROLES_APROBADORES, UsuarioLocal
+from pumaverso_tienda.usuarios import UsuarioLocal
 
 router = APIRouter(prefix="/inventario/fantasma", tags=["Inventario fantasma"])
-
-
-def requerir_gerente(
-    usuario: Annotated[UsuarioLocal, Depends(obtener_usuario_actual)],
-) -> UsuarioLocal:
-    if usuario.rol not in ROLES_APROBADORES:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="El reporte de inventario fantasma es para el gerente o el supervisor.",
-        )
-    return usuario
 
 
 ConexionDep = Annotated[sqlite3.Connection, Depends(obtener_conexion)]

@@ -977,6 +977,58 @@ input {
   align-items: end;
 }
 
+/* El corte del día se imprime en el mismo papel térmico que el ticket de venta. */
+.corte__cuerpo {
+  display: grid;
+  grid-template-columns: minmax(16rem, 20rem) minmax(0, 1fr);
+  gap: 1.75rem;
+  align-items: start;
+}
+
+.corte__ticket {
+  margin-bottom: 1.5rem;
+}
+
+.corte__fecha {
+  padding-bottom: 0.6rem;
+  border-bottom: 1px dashed var(--mostrador-linea);
+  font-weight: 600;
+}
+
+.corte__lineas {
+  display: grid;
+  margin: 0;
+}
+
+.corte__lineas div {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px dashed var(--mostrador-linea);
+}
+
+.corte__lineas dt {
+  color: var(--tinta-suave);
+}
+
+.corte__lineas dd {
+  margin: 0;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.corte__detalle {
+  display: grid;
+  gap: 1.5rem;
+}
+
+.tabla__titulo {
+  padding: 0 0 0.5rem;
+  font-weight: 600;
+  text-align: left;
+}
+
 /* ---------- Pantallas angostas ---------- */
 
 @media (max-width: 52rem) {
@@ -1012,9 +1064,14 @@ input {
     font-size: var(--t-grande);
   }
 
-  .tabla:not(.tabla--captura) th:nth-child(3),
-  .tabla:not(.tabla--captura) td:nth-child(3) {
+  .tabla--ventas th:nth-child(3),
+  .tabla--ventas td:nth-child(3) {
     display: none;
+  }
+
+  .corte__cuerpo,
+  .formulario__encabezado--con-accion {
+    grid-template-columns: 1fr;
   }
 }
 

@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+import math
 import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
@@ -10,11 +11,16 @@ from datetime import UTC, datetime
 from typing import Annotated
 
 import psycopg
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pumaverso_contratos import PATRON_IDENTIFICADOR, EventoContrato
 from pydantic import BaseModel, Field
 
+from pumaverso_central.auditoria import (
+    RegistroNoEncontradoError,
+    listar_auditoria,
+    marcar_revisada,
+)
 from pumaverso_central.cola import (
     ConflictoHashEventoError,
     eventos_fallidos,
@@ -37,6 +43,7 @@ from pumaverso_central.fantasma import (
     listar_sospechas,
     registrar_conteo,
 )
+from pumaverso_central.limite import LimitadorPorSucursal
 from pumaverso_central.trabajador import TrabajadorCola
 
 settings = get_central_settings()
@@ -116,6 +123,8 @@ def obtener_conexion_central() -> Iterator[psycopg.Connection]:
 
 ConexionCentralDep = Annotated[psycopg.Connection, Depends(obtener_conexion_central)]
 
+limitador = LimitadorPorSucursal()
+
 esquema_llave = HTTPBearer(
     auto_error=False,
     description="Llave de sucursal o llave de administración (decisión 0010).",
@@ -144,7 +153,28 @@ def obtener_credencial(
             detail=detalle,
             headers={"WWW-Authenticate": "Bearer"},
         )
+    if not credencial.es_admin:
+        _respetar_limite(credencial.sucursal_id)
     return credencial
+
+
+def _respetar_limite(sucursal_id: str) -> None:
+    """429 si la sucursal pidió demasiado; la tienda reintenta más tarde (decisión 0012)."""
+    configuracion = get_central_settings()
+    if configuracion.limite_por_minuto == 0:
+        return
+    espera = limitador.intentar(
+        sucursal_id,
+        por_minuto=configuracion.limite_por_minuto,
+        rafaga=configuracion.limite_rafaga,
+    )
+    if espera is not None:
+        segundos = max(1, math.ceil(espera))
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=f"Demasiadas peticiones de la sucursal {sucursal_id}: espera {segundos} s.",
+            headers={"Retry-After": str(segundos)},
+        )
 
 
 CredencialDep = Annotated[Credencial, Depends(obtener_credencial)]
@@ -200,6 +230,11 @@ class UsuarioCentralPayload(BaseModel):
 class ConteoFisicoPayload(BaseModel):
     cantidad_contada: int = Field(ge=0)
     usuario_id: str = Field(pattern=PATRON_IDENTIFICADOR)
+
+
+class RevisionAuditoriaPayload(BaseModel):
+    revisada_por: str = Field(pattern=PATRON_IDENTIFICADOR)
+    nota: str = Field(min_length=1, max_length=500)
 
 
 class LlaveSucursalPayload(BaseModel):
@@ -512,3 +547,33 @@ def revocar_llave(sucursal_id: str, conn: ConexionCentralDep, _admin: AdminDep) 
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"La sucursal {sucursal_id} no tiene llave.",
         )
+
+
+@app.get("/auditoria", tags=["Auditoría"])
+def consultar_auditoria(
+    conn: ConexionCentralDep,
+    _admin: AdminDep,
+    sucursal_id: str | None = None,
+    incluir_revisadas: bool = False,
+    limite: Annotated[int, Query(ge=1, le=1000)] = 100,
+) -> list[dict[str, object]]:
+    """Operaciones de usuarios dados de baja que llegaron después de su baja.
+
+    Por defecto, solo las que nadie ha revisado.
+    """
+    return listar_auditoria(
+        conn, sucursal_id=sucursal_id, incluir_revisadas=incluir_revisadas, limite=limite
+    )
+
+
+@app.post("/auditoria/{registro_id}/revisar", tags=["Auditoría"])
+def revisar_auditoria(
+    registro_id: int, datos: RevisionAuditoriaPayload, conn: ConexionCentralDep, _admin: AdminDep
+) -> dict[str, object]:
+    """Marca un registro como revisado, con quién lo revisó y qué concluyó."""
+    try:
+        return marcar_revisada(
+            conn, registro_id=registro_id, revisada_por=datos.revisada_por, nota=datos.nota
+        )
+    except RegistroNoEncontradoError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error

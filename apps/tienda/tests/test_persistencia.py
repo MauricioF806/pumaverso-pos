@@ -109,3 +109,29 @@ def test_migraciones_deben_estar_numeradas_sin_huecos(conexion, monkeypatch):
 
     with pytest.raises(MigracionError, match="sin huecos"):
         aplicar_migraciones(conexion)
+
+
+def test_la_conexion_se_puede_usar_y_cerrar_desde_otro_hilo(ruta_bd):
+    """FastAPI abre la conexión de una petición en un hilo y la usa en otro.
+
+    Con la revisión de hilos de SQLite activa, el cobro fallaba con 500 de vez
+    en cuando (cuando a la petición le tocaban hilos distintos).
+    """
+    import threading
+
+    conexion = abrir_conexion(ruta_bd)
+    aplicar_migraciones(conexion)
+    errores: list[Exception] = []
+
+    def en_otro_hilo():
+        try:
+            conexion.execute("SELECT COUNT(*) FROM eventos").fetchone()
+            conexion.close()
+        except Exception as error:  # noqa: BLE001
+            errores.append(error)
+
+    hilo = threading.Thread(target=en_otro_hilo)
+    hilo.start()
+    hilo.join()
+
+    assert errores == []

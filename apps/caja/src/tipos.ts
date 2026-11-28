@@ -119,3 +119,19 @@ export interface ConteoRegistrado {
   existencia_local: number;
   diferencia: number;
 }
+
+// --- Reporte de ventas (decisión 0012) ---
+
+export interface ReporteVentas {
+  desde: string;
+  hasta: string;
+  ventas: number;
+  total_centavos: number;
+  piezas: number;
+  ticket_promedio_centavos: number;
+  canceladas: number;
+  canceladas_centavos: number;
+  con_inventario_negativo: number;
+  por_cajero: { usuario_id: string; nombre: string; ventas: number; total_centavos: number }[];
+  productos_mas_vendidos: { sku: string; nombre: string; piezas: number; total_centavos: number }[];
+}
