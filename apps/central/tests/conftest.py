@@ -19,6 +19,7 @@ from pumaverso_central.db import abrir_conexion_central, inicializar_esquema_cen
 
 # Las pruebas procesan la cola a mano; las del trabajador lo activan a propósito.
 os.environ["CENTRAL_COLA_AUTOMATICA"] = "false"
+os.environ["CENTRAL_FANTASMA_AUTOMATICO"] = "false"
 
 URL_PRUEBAS_POR_DEFECTO = "postgresql://pumaverso:pumaverso@127.0.0.1:5432/pumaverso_central_test"
 

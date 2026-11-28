@@ -2,6 +2,7 @@
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -18,11 +19,48 @@ from pumaverso_central.cola import (
     procesar_eventos_pendientes_cola,
     recibir_lote_eventos,
 )
-from pumaverso_central.config import get_central_settings
+from pumaverso_central.config import CentralSettings, get_central_settings
 from pumaverso_central.db import abrir_conexion_central, inicializar_esquema_central
+from pumaverso_central.fantasma import (
+    SospechaNoEncontradaError,
+    detectar_inventario_fantasma,
+    listar_sospechas,
+    registrar_conteo,
+)
 from pumaverso_central.trabajador import TrabajadorCola
 
 settings = get_central_settings()
+registro = logging.getLogger(__name__)
+
+
+def _detectar_fantasma_una_vez(configuracion: CentralSettings) -> None:
+    with abrir_conexion_central(configuracion.database_url) as conn:
+        resultado = detectar_inventario_fantasma(
+            conn, parametros=configuracion.parametros_fantasma()
+        )
+    if resultado.nuevas or resultado.escaladas:
+        registro.warning(
+            "Inventario fantasma: %d sospechas nuevas, %d escaladas.",
+            len(resultado.nuevas),
+            resultado.escaladas,
+        )
+
+
+async def _detectar_fantasma_siempre(
+    configuracion: CentralSettings, detener: asyncio.Event
+) -> None:
+    """Revisa las franjas terminadas cada ``fantasma_intervalo_segundos`` (decisión 0009)."""
+    while not detener.is_set():
+        try:
+            await asyncio.to_thread(_detectar_fantasma_una_vez, configuracion)
+        except Exception as error:  # noqa: BLE001 - un fallo no debe detener la detección
+            registro.warning("No se pudo revisar inventario fantasma: %s", error)
+        try:
+            await asyncio.wait_for(
+                detener.wait(), timeout=configuracion.fantasma_intervalo_segundos
+            )
+        except TimeoutError:
+            continue
 
 
 @asynccontextmanager
@@ -36,7 +74,7 @@ async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
         conn.close()
 
     app_.state.trabajador_cola = None
-    tarea: asyncio.Task[None] | None = None
+    tareas: list[asyncio.Task[None]] = []
     detener = asyncio.Event()
     if configuracion.cola_automatica:
         trabajador = TrabajadorCola(
@@ -45,12 +83,14 @@ async def lifespan(app_: FastAPI) -> AsyncIterator[None]:
             intervalo_segundos=configuracion.cola_intervalo_segundos,
         )
         app_.state.trabajador_cola = trabajador
-        tarea = asyncio.create_task(trabajador.ejecutar_siempre(detener))
+        tareas.append(asyncio.create_task(trabajador.ejecutar_siempre(detener)))
+    if configuracion.fantasma_automatico:
+        tareas.append(asyncio.create_task(_detectar_fantasma_siempre(configuracion, detener)))
 
     yield
 
-    if tarea is not None:
-        detener.set()
+    detener.set()
+    for tarea in tareas:
         with contextlib.suppress(asyncio.CancelledError):
             await tarea
 
@@ -91,6 +131,11 @@ class UsuarioCentralPayload(BaseModel):
     rol: str = Field(min_length=1, max_length=40)
     hash_pin: str = Field(min_length=1)
     activo: bool = True
+
+
+class ConteoFisicoPayload(BaseModel):
+    cantidad_contada: int = Field(ge=0)
+    usuario_id: str = Field(pattern=PATRON_IDENTIFICADOR)
 
 
 class ProductoCentralPayload(BaseModel):
@@ -280,3 +325,59 @@ def guardar_producto_central(
             ),
         )
     return {"status": "ok", "sku": sku}
+
+
+@app.post("/inventario/fantasma/detectar", tags=["Inventario fantasma"])
+def detectar_fantasma(
+    conn: ConexionCentralDep, momento: datetime | None = None
+) -> dict[str, object]:
+    """Revisa ahora las franjas terminadas de las últimas 24 horas.
+
+    Central ya lo hace solo cada ``FANTASMA_INTERVALO_SEGUNDOS``. ``momento``
+    permite revisar como si fuera otra hora (demos y pruebas).
+    """
+    if momento is not None and momento.tzinfo is None:
+        raise HTTPException(status_code=422, detail="momento debe incluir zona horaria.")
+    resultado = detectar_inventario_fantasma(
+        conn, parametros=get_central_settings().parametros_fantasma(), ahora=momento
+    )
+    return {
+        "franjas_evaluadas": resultado.franjas_evaluadas,
+        "franjas_pendientes": resultado.franjas_pendientes,
+        "sospechas_nuevas": resultado.nuevas,
+        "sospechas_escaladas": resultado.escaladas,
+    }
+
+
+@app.get("/inventario/fantasma/sospechas", tags=["Inventario fantasma"])
+def reporte_fantasma(
+    conn: ConexionCentralDep,
+    sucursal_id: str | None = None,
+    incluir_resueltas: bool = False,
+) -> dict[str, object]:
+    """Reporte para el gerente: qué contar, qué pedir y cuánto se está dejando de vender."""
+    sospechas = listar_sospechas(conn, sucursal_id=sucursal_id, solo_abiertas=not incluir_resueltas)
+    abiertas = [s for s in sospechas if s["estado"] != "resuelta"]
+    return {
+        "sospechas": sospechas,
+        "sugerencia_pedido": sorted({s["sku"] for s in abiertas}),
+        "venta_perdida_estimada_centavos": sum(
+            s["venta_perdida_estimada_centavos"] for s in abiertas
+        ),
+    }
+
+
+@app.post("/inventario/fantasma/sospechas/{sospecha_id}/conteo", tags=["Inventario fantasma"])
+def registrar_conteo_fisico(
+    sospecha_id: int, datos: ConteoFisicoPayload, conn: ConexionCentralDep
+) -> dict[str, object]:
+    """Cierra la sospecha con el conteo del gerente y dice cuánto ajustar en la tienda."""
+    try:
+        return registrar_conteo(
+            conn,
+            sospecha_id=sospecha_id,
+            cantidad_contada=datos.cantidad_contada,
+            usuario_id=datos.usuario_id,
+        )
+    except SospechaNoEncontradaError as error:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error

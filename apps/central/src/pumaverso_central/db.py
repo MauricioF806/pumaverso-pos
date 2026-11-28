@@ -89,6 +89,49 @@ CREATE TABLE IF NOT EXISTS inventario.cola_auditoria (
     registrado_en  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     UNIQUE (sucursal_id, caja_id, consecutivo)
 );
+
+-- Detección de inventario fantasma (decisión 0009).
+CREATE INDEX IF NOT EXISTS idx_eventos_recibidos_ventas
+    ON sincronizacion.eventos_recibidos (sucursal_id, registrado_en)
+    WHERE tipo = 'venta';
+
+CREATE TABLE IF NOT EXISTS inventario.franjas_evaluadas (
+    sucursal_id    TEXT        NOT NULL,
+    franja_inicio  TIMESTAMPTZ NOT NULL,
+    resultado      TEXT        NOT NULL,
+    evaluada_en    TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (sucursal_id, franja_inicio)
+);
+
+CREATE TABLE IF NOT EXISTS inventario.sospechas_fantasma (
+    id                               BIGSERIAL        PRIMARY KEY,
+    sucursal_id                      TEXT             NOT NULL,
+    sku                              TEXT             NOT NULL,
+    franja_inicio                    TIMESTAMPTZ      NOT NULL,
+    franja_fin                       TIMESTAMPTZ      NOT NULL,
+    unidades_esperadas               DOUBLE PRECISION NOT NULL,
+    unidades_vendidas                INTEGER          NOT NULL,
+    umbral_unidades                  INTEGER          NOT NULL,
+    probabilidad                     DOUBLE PRECISION NOT NULL,
+    dias_historia                    INTEGER          NOT NULL,
+    existencia_registrada            INTEGER          NOT NULL,
+    venta_perdida_estimada_centavos  INTEGER          NOT NULL DEFAULT 0,
+    franjas_afectadas                INTEGER          NOT NULL DEFAULT 1,
+    estado                           TEXT             NOT NULL
+        CHECK (estado IN ('pendiente_conteo', 'escalada', 'resuelta')),
+    detectada_en                     TIMESTAMPTZ      NOT NULL,
+    escalada_en                      TIMESTAMPTZ      NULL,
+    resuelta_en                      TIMESTAMPTZ      NULL,
+    resolucion                       TEXT             NULL,
+    cantidad_contada                 INTEGER          NULL,
+    resuelta_por                     TEXT             NULL,
+    UNIQUE (sucursal_id, sku, franja_inicio)
+);
+
+-- Nunca dos sospechas abiertas del mismo producto en la misma sucursal.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sospecha_abierta_unica
+    ON inventario.sospechas_fantasma (sucursal_id, sku)
+    WHERE estado <> 'resuelta';
 """
 
 

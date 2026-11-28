@@ -19,7 +19,19 @@ from pumaverso_contratos import (
     validar_contenido_por_tipo,
 )
 
+from pumaverso_central.fantasma import resolver_por_ajuste
+
 LONGITUD_MAXIMA_ERROR = 500
+
+# Candado de PostgreSQL (pg_advisory_xact_lock) para aplicar la cola de uno en uno.
+CANDADO_COLA = 7_301_202_608
+
+# Errores que dependen del momento y no del evento: el lote se repite, no se aparta.
+ERRORES_PASAJEROS = (
+    psycopg.errors.DeadlockDetected,
+    psycopg.errors.SerializationFailure,
+    psycopg.errors.LockNotAvailable,
+)
 
 
 class ConflictoHashEventoError(ValueError):
@@ -207,10 +219,20 @@ def procesar_eventos_pendientes_cola(
     Cada evento se aplica en su propio savepoint: si uno falla, se deshacen
     solo sus cambios, se marca como fallido con el error y la cola sigue con
     los demás. Los fallidos se revisan con ``eventos_fallidos()``.
+
+    Solo un proceso aplica la cola a la vez. Si el trabajador automático y
+    ``/sincronizacion/procesar-cola`` coincidieran, cada uno actualizaría las
+    mismas existencias en distinto orden y PostgreSQL los bloquearía entre sí.
+    El segundo espera a que el primero termine su lote.
+
+    Un error pasajero de PostgreSQL (bloqueo mutuo, conflicto de
+    serialización) no es culpa del evento: se deshace el lote completo y se
+    propaga, para que el trabajador lo repita más tarde.
     """
     procesados = 0
     fallidos = 0
     with conn.transaction():
+        conn.execute("SELECT pg_advisory_xact_lock(%s)", (CANDADO_COLA,))
         filas = conn.execute(
             """
             SELECT id, sucursal_id, caja_id, consecutivo, tipo, contenido, usuario_id
@@ -232,6 +254,8 @@ def procesar_eventos_pendientes_cola(
                         (datetime.now(UTC), fila["id"]),
                     )
                 procesados += 1
+            except ERRORES_PASAJEROS:
+                raise
             except Exception as error:  # noqa: BLE001 - se registra y la cola continúa
                 conn.execute(
                     """
@@ -321,6 +345,8 @@ def _aplicar_evento_en_central(conn: psycopg.Connection, fila: dict[str, Any]) -
     elif tipo is TipoEvento.AJUSTE:
         ajuste = ContenidoAjuste.model_validate(contenido)
         _actualizar_existencia_central(conn, sucursal_id, ajuste.sku, ajuste.diferencia_cantidad)
+        # Un ajuste implica que alguien contó ese producto: cierra la sospecha de fantasma.
+        resolver_por_ajuste(conn, sucursal_id=sucursal_id, sku=ajuste.sku, usuario_id=usuario_id)
     elif tipo is TipoEvento.TRASPASO:
         traspaso = ContenidoTraspaso.model_validate(contenido)
         signo = -1 if traspaso.direccion == "salida" else 1

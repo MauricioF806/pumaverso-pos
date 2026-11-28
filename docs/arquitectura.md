@@ -55,3 +55,4 @@ Cada decisión vive en su propio archivo dentro de [`decisiones/`](decisiones/).
 | [0006](decisiones/0006-vigencia-sesiones-y-validacion-en-central.md) | Vigencia desde la recepción, sesiones con PIN y validación en central | Aceptada |
 | [0007](decisiones/0007-sincronizacion-automatica.md) | Sincronización y cola automáticas dentro de cada aplicación | Aceptada |
 | [0008](decisiones/0008-pantalla-de-caja-web.md) | Pantalla de caja como aplicación web; Tauri opcional | Aceptada |
+| [0009](decisiones/0009-deteccion-de-inventario-fantasma.md) | Detección de inventario fantasma y cola aplicada de uno en uno | Aceptada |

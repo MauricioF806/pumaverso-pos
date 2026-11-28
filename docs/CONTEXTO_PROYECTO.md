@@ -3,7 +3,7 @@
 **Equipo:** Pumaverso Distribuido  
 **Proyecto:** Plataforma POS distribuida para una cadena de tiendas de conveniencia  
 **Curso:** Sistemas Distribuidos  
-**Versión del documento:** 1.6
+**Versión del documento:** 1.7
 
 ---
 
@@ -218,7 +218,7 @@ Cuando una venta produce inventario negativo:
 
 Se considera inventario fantasma cuando las ventas de un SKU caen por debajo del ritmo esperado para una sucursal y franja horaria.
 
-El umbral se determina por SKU y sucursal, no mediante una cantidad fija de días.
+El umbral se determina por SKU y sucursal, no mediante una cantidad fija de días. El método de V1 (ritmo esperado por franja de 4 horas y umbral con distribución de Poisson) está en `docs/decisiones/0009-deteccion-de-inventario-fantasma.md`.
 
 Cuando se detecta una sospecha:
 
@@ -312,8 +312,9 @@ pumaverso-pos/
 ├── docs/
 │   ├── decisiones/              # decisiones de arquitectura del equipo
 │   ├── arquitectura.md
+│   ├── guion-demo.md            # demo paso a paso
 │   └── CONTEXTO_PROYECTO.md
-├── scripts/
+├── scripts/                     # datos de demostración y simulación de inventario fantasma
 ├── .env.example
 ├── .gitignore
 ├── CONTRIBUTING.md
@@ -406,6 +407,10 @@ Hasta la elaboración de este documento:
 
 - Se implementó la pantalla de caja en `apps/caja/`: inicio de sesión, cobro con escáner y búsqueda, ventas del turno con cancelación aprobada por gerente e indicador de conexión.
 
-Pendiente: pantallas del gerente (recepciones, mermas y ajustes), detección de inventario fantasma, pruebas de falla para la demo y credenciales en la API de central.
+- Central detecta inventario fantasma por SKU, sucursal y franja horaria, con seguimiento de conteo, escalamiento y venta perdida estimada. La cola de central se aplica de uno en uno para evitar bloqueos mutuos (decisión 0009).
 
-**Próximo objetivo:** pruebas de falla y detección de inventario fantasma (paso 8 del plan).
+- Hay pruebas de punta a punta de las fallas de la demo (vender sin central, reconexión y respuesta perdida) y un guion de la demo en `docs/guion-demo.md`.
+
+Pendiente: pantallas del gerente (recepciones, mermas, ajustes y reporte de inventario fantasma) y credenciales en la API de central.
+
+**Próximo objetivo:** credenciales en la API de central y pantallas del gerente.
