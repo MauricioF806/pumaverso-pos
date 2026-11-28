@@ -108,6 +108,26 @@ python scripts/cargar_datos_demo.py
 
 Al terminar muestra los usuarios y sus PIN (`cajero1` / `1234`, `gerente1` / `9999`…). Se puede correr varias veces sin duplicar datos. Con `--help` se ven las opciones.
 
+### Inventario fantasma
+
+Central busca productos que dejaron de venderse aunque el sistema dice que hay: probablemente no están en el anaquel (PRD 5.3, decisión 0009). Lo revisa solo cada 15 minutos.
+
+- `GET /inventario/fantasma/sospechas`: reporte para el gerente, con qué contar, qué agregar al pedido y la venta perdida estimada.
+- `POST /inventario/fantasma/sospechas/{id}/conteo`: registra el conteo físico y cierra la sospecha.
+- `POST /inventario/fantasma/detectar`: revisa en ese momento.
+
+Para verlo en acción, con central levantado y los datos de demostración cargados:
+
+```bash
+python scripts/simular_fantasma.py
+```
+
+Crea una sucursal simulada con 4 semanas de ventas en la que ayer la leche dejó de venderse, y muestra la sospecha.
+
+### Guion de la demo
+
+[`docs/guion-demo.md`](docs/guion-demo.md) tiene la demo paso a paso: venta normal, central caída, reconexión e inventario fantasma, con qué decir y las preguntas probables.
+
 ### Uso de la API de la tienda
 
 Las operaciones requieren una sesión (decisión 0006):
@@ -126,6 +146,8 @@ python -m ruff check apps packages
 python -m ruff check scripts --line-length 100
 cd apps/caja && npm test   # pruebas de la pantalla de caja
 ```
+
+`apps/central/tests/test_punta_a_punta.py` levanta la tienda y central reales y prueba las fallas de la demo: vender sin central, reconectar y perder la respuesta de central sin duplicar ventas.
 
 Las pruebas de central necesitan PostgreSQL (`docker compose up -d`). Usan su propia base, `pumaverso_central_test`, que se crea sola; nunca tocan la de desarrollo. Si PostgreSQL no está disponible, esas pruebas se saltan con un aviso.
 

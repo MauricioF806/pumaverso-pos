@@ -15,7 +15,11 @@ from pumaverso_contratos import (
     serializar_contenido_evento,
 )
 
-from pumaverso_central.cola import procesar_eventos_pendientes_cola
+from pumaverso_central.cola import (
+    eventos_fallidos,
+    procesar_eventos_pendientes_cola,
+    recibir_lote_eventos,
+)
 from pumaverso_central.config import get_central_settings
 from pumaverso_central.db import abrir_conexion_central
 from pumaverso_central.main import app
@@ -372,3 +376,107 @@ def test_el_script_de_demo_carga_usuarios_y_productos_en_central(conn_central):
     usuarios = conn_central.execute("SELECT COUNT(*) AS n FROM usuarios.usuarios").fetchone()["n"]
     productos = conn_central.execute("SELECT COUNT(*) AS n FROM catalogo.productos").fetchone()["n"]
     assert (usuarios, productos) == (len(demo.USUARIOS), len(demo.PRODUCTOS))
+
+
+# --- Procesamiento concurrente de la cola ----------------------------------------------
+
+
+def _venta_de_varios(consecutivo: int, skus: list[str]) -> EventoContrato:
+    contenido = serializar_contenido_evento(
+        ContenidoVenta(
+            partidas=[
+                LineaProducto(
+                    sku=s, cantidad=1, precio_unitario_centavos=100, subtotal_centavos=100
+                )
+                for s in skus
+            ],
+            total_centavos=100 * len(skus),
+        )
+    )
+    datos = {
+        "sucursal_id": "S001",
+        "caja_id": "C01",
+        "consecutivo": consecutivo,
+        "tipo": TipoEvento.VENTA,
+        "version_esquema": 1,
+        "contenido": contenido,
+        "usuario_id": "cajero-1",
+    }
+    huella = calcular_hash_evento(**datos, registrado_en=formatear_registrado_en(BASE))
+    return EventoContrato(**datos, registrado_en=BASE, hash=huella)
+
+
+def test_dos_procesos_aplicando_la_cola_a_la_vez_no_apartan_eventos(
+    conn_central, url_central_pruebas, monkeypatch
+):
+    """El trabajador y /procesar-cola pueden coincidir; no deben bloquearse entre sí.
+
+    Cada proceso toma dos ventas: uno vende A y luego B; el otro, B y luego A.
+    Una barrera hace que ambos terminen su primera venta antes de seguir, que es
+    justo el cruce que bloqueaba a PostgreSQL.
+    """
+    import threading
+
+    from pumaverso_central import cola
+
+    eventos = [_venta_de_varios(n, [sku]) for n, sku in enumerate("ABBA", start=1)]
+    recibir_lote_eventos(conn_central, sucursal_id="S001", caja_id="C01", eventos=eventos)
+
+    barrera = threading.Barrier(2)
+    original = cola._aplicar_evento_en_central
+    primera_vez = threading.local()
+
+    def aplicar_y_esperar_al_otro(conn, fila):
+        original(conn, fila)
+        if not getattr(primera_vez, "hecha", False):
+            primera_vez.hecha = True
+            try:
+                barrera.wait(timeout=1)
+            except threading.BrokenBarrierError:
+                pass  # el otro proceso está esperando su turno: bien
+
+    monkeypatch.setattr(cola, "_aplicar_evento_en_central", aplicar_y_esperar_al_otro)
+    resultados = []
+
+    def procesar():
+        with abrir_conexion_central(url_central_pruebas) as conn:
+            resultados.append(procesar_eventos_pendientes_cola(conn, limite=2))
+
+    hilos = [threading.Thread(target=procesar) for _ in range(2)]
+    for hilo in hilos:
+        hilo.start()
+    for hilo in hilos:
+        hilo.join(timeout=30)
+
+    assert eventos_fallidos(conn_central) == []
+    assert sum(r.procesados for r in resultados) == 4
+    cantidades = conn_central.execute(
+        "SELECT sku, cantidad FROM inventario.existencias_sucursal ORDER BY sku"
+    ).fetchall()
+    assert [(c["sku"], c["cantidad"]) for c in cantidades] == [("A", -2), ("B", -2)]
+
+
+def test_un_error_pasajero_de_postgresql_no_aparta_el_evento(conn_central, monkeypatch):
+    """Un bloqueo mutuo no es culpa del evento: se reintenta el lote, no se aparta."""
+    from pumaverso_central import cola
+
+    original = cola._aplicar_evento_en_central
+    llamadas = {"n": 0}
+
+    def falla_una_vez(conn, fila):
+        llamadas["n"] += 1
+        if llamadas["n"] == 1:
+            raise psycopg.errors.DeadlockDetected("deadlock detected")
+        original(conn, fila)
+
+    monkeypatch.setattr(cola, "_aplicar_evento_en_central", falla_una_vez)
+    recibir_lote_eventos(
+        conn_central, sucursal_id="S001", caja_id="C01", eventos=[_crear_evento_venta(1)]
+    )
+
+    with pytest.raises(psycopg.errors.DeadlockDetected):
+        procesar_eventos_pendientes_cola(conn_central)
+    reintento = procesar_eventos_pendientes_cola(conn_central)
+
+    assert reintento.procesados == 1
+    assert eventos_fallidos(conn_central) == []

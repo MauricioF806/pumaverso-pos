@@ -5,6 +5,8 @@ from functools import lru_cache
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from pumaverso_central.fantasma import ParametrosFantasma
+
 
 class CentralSettings(BaseSettings):
     """Parámetros de conexión y servicio para apps/central."""
@@ -17,6 +19,26 @@ class CentralSettings(BaseSettings):
     cola_automatica: bool = True
     cola_intervalo_segundos: float = Field(default=5.0, gt=0)
     cola_lote: int = Field(default=50, ge=1, le=1000)
+
+    # Detección de inventario fantasma (decisión 0009).
+    fantasma_automatico: bool = True
+    fantasma_intervalo_segundos: float = Field(default=900.0, gt=0)
+    fantasma_zona_horaria: str = "America/Mexico_City"
+    fantasma_horas_por_franja: int = Field(default=4, ge=1, le=24)
+    fantasma_dias_historia: int = Field(default=28, ge=1, le=365)
+    fantasma_dias_minimos: int = Field(default=7, ge=1)
+    fantasma_significancia: float = Field(default=0.01, gt=0, lt=1)
+    fantasma_horas_para_escalar: float = Field(default=24.0, gt=0)
+
+    def parametros_fantasma(self) -> ParametrosFantasma:
+        return ParametrosFantasma(
+            zona_horaria=self.fantasma_zona_horaria,
+            horas_por_franja=self.fantasma_horas_por_franja,
+            dias_historia=self.fantasma_dias_historia,
+            dias_minimos=self.fantasma_dias_minimos,
+            significancia=self.fantasma_significancia,
+            horas_para_escalar=self.fantasma_horas_para_escalar,
+        )
 
     model_config = SettingsConfigDict(
         env_prefix="CENTRAL_",

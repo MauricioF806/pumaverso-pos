@@ -118,11 +118,18 @@ class TransporteCentral(Protocol):
 
 
 class TransporteCentralHttp:
-    """Cliente HTTP síncrono contra la API del servidor central."""
+    """Cliente HTTP síncrono contra la API del servidor central.
 
-    def __init__(self, base_url: str, *, timeout: float = 10.0) -> None:
+    ``cliente`` permite pasar un ``httpx.Client`` propio; las pruebas de punta a
+    punta lo usan para hablar con la app de central sin abrir puertos.
+    """
+
+    def __init__(
+        self, base_url: str, *, timeout: float = 10.0, cliente: httpx.Client | None = None
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
+        self._cliente = cliente
 
     def subir_eventos(
         self, sucursal_id: str, caja_id: str, eventos: list[EventoContrato]
@@ -133,7 +140,7 @@ class TransporteCentralHttp:
             "eventos": [e.model_dump(mode="json") for e in eventos],
         }
         try:
-            respuesta = httpx.post(
+            respuesta = (self._cliente or httpx).post(
                 f"{self._base_url}/sincronizacion/eventos",
                 json=payload,
                 timeout=self._timeout,
@@ -160,7 +167,7 @@ class TransporteCentralHttp:
         if desde is not None:
             params["desde"] = desde.astimezone(UTC).isoformat()
         try:
-            respuesta = httpx.get(
+            respuesta = (self._cliente or httpx).get(
                 f"{self._base_url}/sincronizacion/actualizaciones",
                 params=params,
                 timeout=self._timeout,
