@@ -53,6 +53,13 @@ class ConflictoSincronizacionError(ErrorSincronizacion):
     """
 
 
+class CredencialRechazadaError(ConflictoSincronizacionError):
+    """Central no aceptó la llave de esta sucursal (falta, es incorrecta o es de otra).
+
+    Reintentar no lo arregla: hay que corregir LLAVE_CENTRAL en el .env de la tienda.
+    """
+
+
 @dataclass(frozen=True, slots=True)
 class RespuestaSubida:
     """Confirmación devuelta por central tras recibir un lote de eventos."""
@@ -125,11 +132,17 @@ class TransporteCentralHttp:
     """
 
     def __init__(
-        self, base_url: str, *, timeout: float = 10.0, cliente: httpx.Client | None = None
+        self,
+        base_url: str,
+        *,
+        llave: str | None = None,
+        timeout: float = 10.0,
+        cliente: httpx.Client | None = None,
     ) -> None:
         self._base_url = base_url.rstrip("/")
         self._timeout = timeout
         self._cliente = cliente
+        self._encabezados = {"Authorization": f"Bearer {llave}"} if llave else {}
 
     def subir_eventos(
         self, sucursal_id: str, caja_id: str, eventos: list[EventoContrato]
@@ -143,10 +156,12 @@ class TransporteCentralHttp:
             respuesta = (self._cliente or httpx).post(
                 f"{self._base_url}/sincronizacion/eventos",
                 json=payload,
+                headers=self._encabezados,
                 timeout=self._timeout,
             )
         except httpx.HTTPError as error:
             raise ErrorSincronizacion(f"Error al subir eventos a central: {error}") from error
+        _rechazar_si_no_acepta_la_llave(respuesta)
         if respuesta.status_code == httpx.codes.CONFLICT:
             raise ConflictoSincronizacionError(
                 f"Central rechazó los eventos por conflicto: {_detalle(respuesta)}"
@@ -170,8 +185,10 @@ class TransporteCentralHttp:
             respuesta = (self._cliente or httpx).get(
                 f"{self._base_url}/sincronizacion/actualizaciones",
                 params=params,
+                headers=self._encabezados,
                 timeout=self._timeout,
             )
+            _rechazar_si_no_acepta_la_llave(respuesta)
             respuesta.raise_for_status()
         except httpx.HTTPError as error:
             raise ErrorSincronizacion(
@@ -350,6 +367,14 @@ def _asegurar_zona_horaria(ahora: datetime | None) -> datetime:
     if momento.tzinfo is None:
         raise ValueError("La fecha debe incluir zona horaria.")
     return momento.astimezone(UTC)
+
+
+def _rechazar_si_no_acepta_la_llave(respuesta: httpx.Response) -> None:
+    if respuesta.status_code in (httpx.codes.UNAUTHORIZED, httpx.codes.FORBIDDEN):
+        raise CredencialRechazadaError(
+            f"Central rechazó la llave de esta sucursal: {_detalle(respuesta)} "
+            "Revisa LLAVE_CENTRAL en el .env de la tienda."
+        )
 
 
 def _detalle(respuesta: httpx.Response) -> str:

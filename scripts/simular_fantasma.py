@@ -15,6 +15,9 @@ Opciones:
     --sucursal ID    Sucursal simulada (por defecto DEMO + mes y día, p. ej. DEMO1127)
     --dias N         Días de historia (por defecto 28)
 
+Usa la llave de administración de central (``CENTRAL_LLAVE_ADMIN`` del
+``.env``), así que hay que correrlo desde la raíz del repo.
+
 Se puede correr varias veces el mismo día: los eventos son idénticos y central
 no los duplica. Cada día usa una sucursal distinta para no chocar con la
 historia del día anterior. La sucursal simulada no afecta a la tienda real
@@ -41,6 +44,7 @@ from pumaverso_contratos import (
     formatear_registrado_en,
     serializar_contenido_evento,
 )
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ZONA = ZoneInfo("America/Mexico_City")
 LECHE = "7501020515343"
@@ -74,6 +78,12 @@ HORAS_POR_FRANJA = 4
 
 class ErrorSimulacion(RuntimeError):
     """Algo impidió simular; el mensaje explica qué revisar."""
+
+
+class Llaves(BaseSettings):
+    central_llave_admin: str | None = None
+
+    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 
 
 class CajaSimulada:
@@ -217,7 +227,9 @@ def main(argumentos: list[str] | None = None) -> int:
 
     revision = ayer.replace(hour=20, minute=30)
     try:
-        with httpx.Client(base_url=args.central, timeout=60) as central:
+        llave = Llaves().central_llave_admin
+        encabezados = {"Authorization": f"Bearer {llave}"} if llave else {}
+        with httpx.Client(base_url=args.central, timeout=60, headers=encabezados) as central:
             catalogo = leer_catalogo(central, args.sucursal)
             caja = simular(args.sucursal, args.dias, ayer, catalogo)
             enviar(central, caja)
@@ -274,7 +286,12 @@ def _verificar(respuesta: httpx.Response, que: str) -> None:
             detalle = respuesta.json().get("detail", respuesta.text)
         except ValueError:
             detalle = respuesta.text
-        raise ErrorSimulacion(f"No se pudo {que} (HTTP {respuesta.status_code}): {detalle}")
+        pista = ""
+        if respuesta.status_code in (401, 403):
+            pista = (
+                " Revisa CENTRAL_LLAVE_ADMIN en el .env y corre el script desde la raíz del repo."
+            )
+        raise ErrorSimulacion(f"No se pudo {que} (HTTP {respuesta.status_code}): {detalle}{pista}")
 
 
 if __name__ == "__main__":

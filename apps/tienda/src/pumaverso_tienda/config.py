@@ -24,6 +24,9 @@ class Settings(BaseSettings):
 
     # Parámetros de sincronización con el servidor central.
     central_url: str = "http://127.0.0.1:8001"
+    # Llave de esta sucursal para hablar con central (decisión 0010). La entrega
+    # el administrador de central; sin ella central rechaza la sincronización.
+    llave_central: str | None = None
     sync_lote_maximo: int = Field(default=100, ge=1, le=1000)
 
     # Sincronización automática en segundo plano (decisión 0007).

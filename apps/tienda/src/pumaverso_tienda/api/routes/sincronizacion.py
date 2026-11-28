@@ -11,6 +11,7 @@ from pumaverso_tienda.api.dependencias import obtener_conexion, obtener_transpor
 from pumaverso_tienda.config import get_settings
 from pumaverso_tienda.sincronizacion import (
     ConflictoSincronizacionError,
+    CredencialRechazadaError,
     ErrorSincronizacion,
     TransporteCentral,
     estado_sincronizacion_caja,
@@ -81,6 +82,8 @@ def ejecutar_sync(conexion: ConexionDep, transporte: TransporteDep) -> Resultado
             transporte=transporte,
             limite_lote=settings.sync_lote_maximo,
         )
+    except CredencialRechazadaError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
     except ConflictoSincronizacionError as error:
         # La bajada (usuarios y precios) sí se aplicó; solo la subida quedó detenida.
         raise HTTPException(

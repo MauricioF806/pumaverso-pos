@@ -7,6 +7,7 @@ el PRD: la caja vende sin central, no pierde ventas y no las duplica.
 """
 
 import importlib.util
+import os
 from collections.abc import Callable, Iterator
 from pathlib import Path
 
@@ -25,6 +26,8 @@ from pumaverso_central.main import app as app_central
 
 RUTA_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "cargar_datos_demo.py"
 REFRESCO = "7501055300846"
+ADMIN = {"Authorization": f"Bearer {os.environ['CENTRAL_LLAVE_ADMIN']}"}
+LLAVE_S001 = "llave-de-la-sucursal-s001-para-pruebas"
 
 
 def _cargar_script_demo():
@@ -48,11 +51,14 @@ class Red:
     def __call__(self, peticion: httpx.Request) -> httpx.Response:
         if self.cortada:
             raise httpx.ConnectError("Central no responde.", request=peticion)
+        encabezados = {"content-type": peticion.headers.get("content-type", "application/json")}
+        if "authorization" in peticion.headers:
+            encabezados["authorization"] = peticion.headers["authorization"]
         respuesta = self._central.request(
             peticion.method,
             peticion.url.raw_path.decode(),
             content=peticion.content,
-            headers={"content-type": peticion.headers.get("content-type", "application/json")},
+            headers=encabezados,
         )
         es_subida = peticion.method == "POST" and peticion.url.path == "/sincronizacion/eventos"
         if es_subida and self.perder_respuesta_de_subida:
@@ -65,16 +71,21 @@ class Red:
 
 @pytest.fixture
 def sistema(conn_central, tmp_path, monkeypatch) -> Iterator[Callable[[], tuple]]:
-    """Central con los datos de demo, una tienda con 24 piezas y la red entre ambas."""
+    """Central con los datos de demo, una tienda con 24 piezas y la red entre ambas.
+
+    La tienda usa la llave de su sucursal, como en producción.
+    """
     monkeypatch.setenv("DATABASE_PATH", str(tmp_path / "tienda" / "pumaverso.db"))
     monkeypatch.setenv("SYNC_AUTOMATICA", "false")
     get_settings.cache_clear()
 
-    central = TestClient(app_central)
-    demo.cargar_central(central)
-    red = Red(central)
+    central = TestClient(app_central, headers=ADMIN)
+    demo.cargar_central(central, sucursal_id="S001", llave_sucursal=LLAVE_S001)
+    red = Red(TestClient(app_central))  # sin llave propia: solo pasa la de la tienda
     transporte = TransporteCentralHttp(
-        "http://central", cliente=httpx.Client(transport=httpx.MockTransport(red))
+        "http://central",
+        llave=LLAVE_S001,
+        cliente=httpx.Client(transport=httpx.MockTransport(red)),
     )
     app_tienda.dependency_overrides[obtener_transporte_central] = lambda: transporte
 
@@ -179,3 +190,17 @@ def test_varias_ventas_sin_conexion_llegan_completas_y_en_orden(sistema, conn_ce
 
     assert _consecutivos_en_central(conn_central) == [1, 2, 3, 4, 5, 6]
     assert _existencia_en_central(central, conn_central, REFRESCO) == 19
+
+
+def test_con_una_llave_equivocada_la_tienda_avisa_y_no_pierde_ventas(sistema, conn_central):
+    tienda, central, _red = sistema
+    _vender(tienda, REFRESCO, 1)
+    otra = central.put("/sucursales/S001/llave", json={"llave": "x" * 40})  # se cambió en central
+    assert otra.status_code == 200
+
+    rechazo = tienda.post("/sincronizacion/ejecutar")
+
+    assert rechazo.status_code == 409
+    assert "LLAVE_CENTRAL" in rechazo.json()["detail"]
+    assert _pendientes(tienda) == 1  # la venta sigue guardada, esperando
+    assert _consecutivos_en_central(conn_central) == [1]

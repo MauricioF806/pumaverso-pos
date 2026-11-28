@@ -195,9 +195,13 @@ def registrar_conteo(
     sospecha_id: int,
     cantidad_contada: int,
     usuario_id: str,
+    sucursal_id: str | None = None,
     ahora: datetime | None = None,
 ) -> dict[str, Any]:
     """Cierra una sospecha con el conteo físico del gerente.
+
+    Con ``sucursal_id``, solo cierra sospechas de esa sucursal: una sucursal no
+    puede cerrar las de otra.
 
     Devuelve la diferencia contra lo que central tiene registrado. Si no es
     cero, el gerente registra el ajuste en la tienda, que es la dueña del
@@ -213,7 +217,7 @@ def registrar_conteo(
             """,
             (sospecha_id, ESTADO_RESUELTA),
         ).fetchone()
-        if fila is None:
+        if fila is None or (sucursal_id is not None and fila["sucursal_id"] != sucursal_id):
             raise SospechaNoEncontradaError(f"No hay una sospecha abierta con id {sospecha_id}.")
         registrada = _existencia(conn, fila["sucursal_id"], fila["sku"])
         conn.execute(

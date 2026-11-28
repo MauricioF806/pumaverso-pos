@@ -15,6 +15,10 @@ class CentralSettings(BaseSettings):
     app_version: str = "0.1.0"
     database_url: str = "postgresql://pumaverso:pumaverso@127.0.0.1:5432/pumaverso_central"
 
+    # Llave de administración (decisión 0010). Sin ella nadie puede administrar
+    # central: dar de alta usuarios y productos, ver la cola ni registrar llaves.
+    llave_admin: str | None = Field(default=None, min_length=32)
+
     # Procesamiento automático de la cola (decisión 0007).
     cola_automatica: bool = True
     cola_intervalo_segundos: float = Field(default=5.0, gt=0)

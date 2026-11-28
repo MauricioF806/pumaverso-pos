@@ -33,7 +33,8 @@ def obtener_conexion() -> Iterator[sqlite3.Connection]:
 
 def obtener_transporte_central() -> TransporteCentral:
     """Devuelve el cliente HTTP configurado para hablar con central."""
-    return TransporteCentralHttp(get_settings().central_url)
+    settings = get_settings()
+    return TransporteCentralHttp(settings.central_url, llave=settings.llave_central)
 
 
 def obtener_token(

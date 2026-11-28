@@ -52,5 +52,5 @@ Una revisión de los pasos 3 al 6 encontró cuatro fallas, todas reproducidas co
 
 ## Pendiente (fuera de esta decisión)
 
-- La API de central todavía no pide credenciales (revisión, falla 5). Cualquiera que llegue a ella puede crear usuarios, cambiar precios o enviar eventos. Es aceptable solo en una red cerrada del piloto.
+- ~~La API de central todavía no pide credenciales (revisión, falla 5).~~ Resuelto en la decisión 0010.
 - La sincronización y la cola se ejecutan a mano con un endpoint; falta un proceso en segundo plano que use `calcular_espera_reintento()`.

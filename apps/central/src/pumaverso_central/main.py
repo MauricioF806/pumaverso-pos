@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -10,6 +11,7 @@ from typing import Annotated
 
 import psycopg
 from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pumaverso_contratos import PATRON_IDENTIFICADOR, EventoContrato
 from pydantic import BaseModel, Field
 
@@ -20,6 +22,14 @@ from pumaverso_central.cola import (
     recibir_lote_eventos,
 )
 from pumaverso_central.config import CentralSettings, get_central_settings
+from pumaverso_central.credenciales import (
+    LONGITUD_MINIMA_LLAVE,
+    Credencial,
+    generar_llave,
+    identificar,
+    registrar_llave_sucursal,
+    revocar_llave_sucursal,
+)
 from pumaverso_central.db import abrir_conexion_central, inicializar_esquema_central
 from pumaverso_central.fantasma import (
     SospechaNoEncontradaError,
@@ -106,6 +116,60 @@ def obtener_conexion_central() -> Iterator[psycopg.Connection]:
 
 ConexionCentralDep = Annotated[psycopg.Connection, Depends(obtener_conexion_central)]
 
+esquema_llave = HTTPBearer(
+    auto_error=False,
+    description="Llave de sucursal o llave de administración (decisión 0010).",
+)
+
+
+def obtener_credencial(
+    conn: ConexionCentralDep,
+    token: Annotated[HTTPAuthorizationCredentials | None, Depends(esquema_llave)],
+) -> Credencial:
+    """Identifica la llave de ``Authorization: Bearer``; sin llave válida, 401."""
+    if token is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Falta la llave: envía el encabezado Authorization: Bearer <llave>.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    llave_admin = get_central_settings().llave_admin
+    credencial = identificar(conn, token.credentials, llave_admin=llave_admin)
+    if credencial is None:
+        detalle = "La llave no es válida."
+        if llave_admin is None:
+            detalle += " Central no tiene CENTRAL_LLAVE_ADMIN configurada en su .env."
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=detalle,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return credencial
+
+
+CredencialDep = Annotated[Credencial, Depends(obtener_credencial)]
+
+
+def requerir_admin(credencial: CredencialDep) -> Credencial:
+    if not credencial.es_admin:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Esta operación necesita la llave de administración.",
+        )
+    return credencial
+
+
+AdminDep = Annotated[Credencial, Depends(requerir_admin)]
+
+
+def _exigir_sucursal(credencial: Credencial, sucursal_id: str) -> None:
+    if not credencial.puede_actuar_por(sucursal_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Esta llave no es de la sucursal {sucursal_id}.",
+        )
+
+
 app = FastAPI(
     title=settings.app_name,
     description="API central de sincronización, inventario, usuarios y catálogo.",
@@ -138,6 +202,14 @@ class ConteoFisicoPayload(BaseModel):
     usuario_id: str = Field(pattern=PATRON_IDENTIFICADOR)
 
 
+class LlaveSucursalPayload(BaseModel):
+    llave: str | None = Field(
+        default=None,
+        min_length=LONGITUD_MINIMA_LLAVE,
+        description="Déjala vacía para que central genere una al azar.",
+    )
+
+
 class ProductoCentralPayload(BaseModel):
     sku: str = Field(min_length=1, max_length=64)
     nombre: str = Field(min_length=1, max_length=160)
@@ -154,8 +226,9 @@ def health_check() -> dict[str, str]:
 
 @app.post("/sincronizacion/eventos", response_model=LoteEventosResponse, tags=["Sincronización"])
 def subir_eventos_sucursal(
-    datos: LoteEventosRequest, conn: ConexionCentralDep
+    datos: LoteEventosRequest, conn: ConexionCentralDep, credencial: CredencialDep
 ) -> LoteEventosResponse:
+    _exigir_sucursal(credencial, datos.sucursal_id)
     try:
         resultado = recibir_lote_eventos(
             conn,
@@ -178,9 +251,10 @@ def subir_eventos_sucursal(
 def obtener_actualizaciones(
     sucursal_id: str,
     conn: ConexionCentralDep,
+    credencial: CredencialDep,
     desde: datetime | None = None,
 ) -> dict[str, list[dict[str, object]]]:
-    _ = sucursal_id
+    _exigir_sucursal(credencial, sucursal_id)
     if desde is None:
         usuarios = conn.execute(
             """
@@ -228,13 +302,15 @@ def obtener_actualizaciones(
 
 
 @app.post("/sincronizacion/procesar-cola", tags=["Sincronización"])
-def ejecutar_trabajador_cola(conn: ConexionCentralDep, limite: int = 50) -> dict[str, int]:
+def ejecutar_trabajador_cola(
+    conn: ConexionCentralDep, _admin: AdminDep, limite: int = 50
+) -> dict[str, int]:
     resultado = procesar_eventos_pendientes_cola(conn, limite=limite)
     return {"procesados": resultado.procesados, "fallidos": resultado.fallidos}
 
 
 @app.get("/sincronizacion/cola/trabajador", tags=["Sincronización"])
-def consultar_trabajador_cola(request: Request) -> dict[str, object]:
+def consultar_trabajador_cola(request: Request, _admin: AdminDep) -> dict[str, object]:
     """Cómo va el procesamiento automático de la cola."""
     trabajador = getattr(request.app.state, "trabajador_cola", None)
     if trabajador is None:
@@ -252,7 +328,7 @@ def consultar_trabajador_cola(request: Request) -> dict[str, object]:
 
 @app.get("/sincronizacion/cola/fallidos", tags=["Sincronización"])
 def consultar_eventos_fallidos(
-    conn: ConexionCentralDep, limite: int = 100
+    conn: ConexionCentralDep, _admin: AdminDep, limite: int = 100
 ) -> list[dict[str, object]]:
     """Eventos que no se pudieron aplicar y esperan revisión."""
     return [
@@ -263,7 +339,7 @@ def consultar_eventos_fallidos(
 
 @app.put("/usuarios/{usuario_id}", tags=["Usuarios"])
 def guardar_usuario_central(
-    usuario_id: str, datos: UsuarioCentralPayload, conn: ConexionCentralDep
+    usuario_id: str, datos: UsuarioCentralPayload, conn: ConexionCentralDep, _admin: AdminDep
 ) -> dict[str, str]:
     if usuario_id != datos.usuario_id:
         raise HTTPException(
@@ -291,7 +367,7 @@ def guardar_usuario_central(
 
 @app.put("/catalogo/productos/{sku}", tags=["Catálogo"])
 def guardar_producto_central(
-    sku: str, datos: ProductoCentralPayload, conn: ConexionCentralDep
+    sku: str, datos: ProductoCentralPayload, conn: ConexionCentralDep, _admin: AdminDep
 ) -> dict[str, str]:
     if sku != datos.sku:
         raise HTTPException(
@@ -329,7 +405,7 @@ def guardar_producto_central(
 
 @app.post("/inventario/fantasma/detectar", tags=["Inventario fantasma"])
 def detectar_fantasma(
-    conn: ConexionCentralDep, momento: datetime | None = None
+    conn: ConexionCentralDep, _admin: AdminDep, momento: datetime | None = None
 ) -> dict[str, object]:
     """Revisa ahora las franjas terminadas de las últimas 24 horas.
 
@@ -352,10 +428,17 @@ def detectar_fantasma(
 @app.get("/inventario/fantasma/sospechas", tags=["Inventario fantasma"])
 def reporte_fantasma(
     conn: ConexionCentralDep,
+    credencial: CredencialDep,
     sucursal_id: str | None = None,
     incluir_resueltas: bool = False,
 ) -> dict[str, object]:
-    """Reporte para el gerente: qué contar, qué pedir y cuánto se está dejando de vender."""
+    """Reporte para el gerente: qué contar, qué pedir y cuánto se está dejando de vender.
+
+    Con la llave de una sucursal solo se ven las sospechas de esa sucursal.
+    """
+    if not credencial.es_admin:
+        _exigir_sucursal(credencial, sucursal_id or credencial.sucursal_id)
+        sucursal_id = credencial.sucursal_id
     sospechas = listar_sospechas(conn, sucursal_id=sucursal_id, solo_abiertas=not incluir_resueltas)
     abiertas = [s for s in sospechas if s["estado"] != "resuelta"]
     return {
@@ -369,15 +452,63 @@ def reporte_fantasma(
 
 @app.post("/inventario/fantasma/sospechas/{sospecha_id}/conteo", tags=["Inventario fantasma"])
 def registrar_conteo_fisico(
-    sospecha_id: int, datos: ConteoFisicoPayload, conn: ConexionCentralDep
+    sospecha_id: int,
+    datos: ConteoFisicoPayload,
+    conn: ConexionCentralDep,
+    credencial: CredencialDep,
 ) -> dict[str, object]:
-    """Cierra la sospecha con el conteo del gerente y dice cuánto ajustar en la tienda."""
+    """Cierra la sospecha con el conteo del gerente y dice cuánto ajustar en la tienda.
+
+    Con la llave de una sucursal solo se cierran sospechas de esa sucursal.
+    """
     try:
         return registrar_conteo(
             conn,
             sospecha_id=sospecha_id,
             cantidad_contada=datos.cantidad_contada,
             usuario_id=datos.usuario_id,
+            sucursal_id=None if credencial.es_admin else credencial.sucursal_id,
         )
     except SospechaNoEncontradaError as error:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(error)) from error
+
+
+@app.put("/sucursales/{sucursal_id}/llave", tags=["Credenciales"])
+def guardar_llave_sucursal(
+    sucursal_id: str,
+    conn: ConexionCentralDep,
+    _admin: AdminDep,
+    datos: LlaveSucursalPayload | None = None,
+) -> dict[str, str]:
+    """Registra o cambia la llave de una sucursal; la anterior deja de servir.
+
+    Sin cuerpo, central genera una llave al azar y la devuelve **una sola vez**:
+    se copia al ``.env`` de la tienda como ``LLAVE_CENTRAL``. Central solo guarda
+    su SHA-256.
+    """
+    if not re.fullmatch(PATRON_IDENTIFICADOR, sucursal_id):
+        raise HTTPException(status_code=422, detail="sucursal_id no es un identificador válido.")
+    generada = datos is None or datos.llave is None
+    llave = generar_llave() if generada else datos.llave
+    try:
+        registrar_llave_sucursal(conn, sucursal_id, llave)
+    except ValueError as error:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(error)) from error
+    respuesta = {"sucursal_id": sucursal_id}
+    if generada:
+        respuesta["llave"] = llave
+    return respuesta
+
+
+@app.delete(
+    "/sucursales/{sucursal_id}/llave",
+    tags=["Credenciales"],
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def revocar_llave(sucursal_id: str, conn: ConexionCentralDep, _admin: AdminDep) -> None:
+    """Quita la llave de una sucursal: deja de poder sincronizar hasta tener una nueva."""
+    if not revocar_llave_sucursal(conn, sucursal_id):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"La sucursal {sucursal_id} no tiene llave.",
+        )

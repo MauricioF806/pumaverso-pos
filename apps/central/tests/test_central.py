@@ -1,3 +1,4 @@
+import os
 import time
 from datetime import UTC, datetime
 
@@ -24,6 +25,8 @@ from pumaverso_central.config import get_central_settings
 from pumaverso_central.db import abrir_conexion_central
 from pumaverso_central.main import app
 from pumaverso_central.trabajador import TrabajadorCola
+
+ADMIN = {"Authorization": f"Bearer {os.environ['CENTRAL_LLAVE_ADMIN']}"}
 
 BASE = datetime(2026, 11, 25, 20, 0, tzinfo=UTC)
 
@@ -67,7 +70,7 @@ def _lote(*eventos: EventoContrato, sucursal_id: str = "S001") -> dict[str, obje
 
 
 def test_ingesta_idempotente_conflicto_hash_y_huecos(conn_central):
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
     ev1 = _crear_evento_venta(1)
     ev3 = _crear_evento_venta(3)
 
@@ -121,7 +124,7 @@ def test_ingesta_idempotente_conflicto_hash_y_huecos(conn_central):
 
 
 def test_cola_postgresql_actualiza_inventario_y_audita_usuario_revocado(conn_central):
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
 
     # Registramos cajero revocado y producto en central.
     cliente.put(
@@ -174,7 +177,7 @@ def test_cola_postgresql_actualiza_inventario_y_audita_usuario_revocado(conn_cen
 
 
 def test_rechaza_evento_con_hash_que_no_corresponde(conn_central):
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
     evento = _crear_evento_venta(1).model_copy(update={"hash": "0" * 64})
 
     resp = cliente.post("/sincronizacion/eventos", json=_lote(evento))
@@ -188,7 +191,7 @@ def test_rechaza_evento_con_hash_que_no_corresponde(conn_central):
 
 
 def test_rechaza_evento_con_contenido_que_no_cumple_el_contrato(conn_central):
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
     datos = {
         "sucursal_id": "S001",
         "caja_id": "C01",
@@ -208,7 +211,7 @@ def test_rechaza_evento_con_contenido_que_no_cumple_el_contrato(conn_central):
 
 
 def test_un_evento_invalido_rechaza_el_lote_completo(conn_central):
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
     malo = _crear_evento_venta(2).model_copy(update={"hash": "f" * 64})
 
     resp = cliente.post("/sincronizacion/eventos", json=_lote(_crear_evento_venta(1), malo))
@@ -237,7 +240,7 @@ def _encolar_evento_corrupto(conn_central) -> None:
 
 
 def test_un_evento_que_falla_se_aparta_y_la_cola_sigue(conn_central):
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
     _encolar_evento_corrupto(conn_central)
     cliente.post("/sincronizacion/eventos", json=_lote(_crear_evento_venta(1)))
 
@@ -289,7 +292,7 @@ def _trabajador_cola(url: str, *, lote: int = 50, intervalo: float = 5.0) -> Tra
 
 
 def test_el_trabajador_vacia_la_cola_por_lotes(conn_central, url_central_pruebas):
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
     cliente.post(
         "/sincronizacion/eventos",
         json=_lote(_crear_evento_venta(1), _crear_evento_venta(2), _crear_evento_venta(3)),
@@ -341,7 +344,7 @@ def test_la_app_procesa_la_cola_sola(conn_central, monkeypatch):
     monkeypatch.setenv("CENTRAL_COLA_INTERVALO_SEGUNDOS", "0.05")
     get_central_settings.cache_clear()
     try:
-        with TestClient(app) as cliente:
+        with TestClient(app, headers=ADMIN) as cliente:
             cliente.post("/sincronizacion/eventos", json=_lote(_crear_evento_venta(1)))
             limite = time.monotonic() + 5
             estado = cliente.get("/sincronizacion/cola/trabajador").json()
@@ -369,7 +372,7 @@ def test_el_script_de_demo_carga_usuarios_y_productos_en_central(conn_central):
     demo = importlib.util.module_from_spec(especificacion)
     especificacion.loader.exec_module(demo)
 
-    cliente = TestClient(app)
+    cliente = TestClient(app, headers=ADMIN)
     demo.cargar_central(cliente)
     demo.cargar_central(cliente)  # correrlo dos veces no duplica
 
