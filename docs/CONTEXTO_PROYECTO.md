@@ -312,7 +312,6 @@ pumaverso-pos/
 ├── docs/
 │   ├── decisiones/              # decisiones de arquitectura del equipo
 │   ├── arquitectura.md
-│   ├── guion-demo.md            # demo paso a paso
 │   └── CONTEXTO_PROYECTO.md
 ├── scripts/                     # datos de demostración y simulación de inventario fantasma
 ├── .env.example
@@ -409,7 +408,7 @@ Hasta la elaboración de este documento:
 
 - Central detecta inventario fantasma por SKU, sucursal y franja horaria, con seguimiento de conteo, escalamiento y venta perdida estimada. La cola de central se aplica de uno en uno para evitar bloqueos mutuos (decisión 0009).
 
-- Hay pruebas de punta a punta de las fallas de la demo (vender sin central, reconexión y respuesta perdida) y un guion de la demo en `docs/guion-demo.md`.
+- Hay pruebas de punta a punta de las fallas de la demo: vender sin central, reconexión y respuesta perdida.
 
 Pendiente: pantallas del gerente (recepciones, mermas, ajustes y reporte de inventario fantasma) y credenciales en la API de central.
 
