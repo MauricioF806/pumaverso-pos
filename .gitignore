@@ -37,3 +37,6 @@ Thumbs.db
 
 # Visual Studio
 .vs/
+
+# Guion de la demo: lo guarda cada integrante, no va en el repositorio
+docs/guion-demo.md

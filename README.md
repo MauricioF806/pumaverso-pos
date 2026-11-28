@@ -124,10 +124,6 @@ python scripts/simular_fantasma.py
 
 Crea una sucursal simulada con 4 semanas de ventas en la que ayer la leche dejó de venderse, y muestra la sospecha.
 
-### Guion de la demo
-
-[`docs/guion-demo.md`](docs/guion-demo.md) tiene la demo paso a paso: venta normal, central caída, reconexión e inventario fantasma, con qué decir y las preguntas probables.
-
 ### Uso de la API de la tienda
 
 Las operaciones requieren una sesión (decisión 0006):
